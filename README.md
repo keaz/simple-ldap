@@ -3,7 +3,7 @@
 A ldap client library that wraps [ldap3](https://github.com/inejge/ldap3) to make it easy to use.
 
 ### Status of the project
-Currently this is in early alpha stage. Library only support 
+Currently this is in early alpha stage. Library only support use asynchronously. 
 
 ## Usage
 ```
@@ -17,7 +17,7 @@ cargo add simple-ldap
 use simple-ldap::{LdapClient,Error,EqFilter};
 use simple-ldap::ldap3::Scope;
 
-
+#[tokio::main]
 fn main() -> Result<()> {
     let mut client = LdapClient::from("ldap://localhost:2389", "cn=admin", "password")?;
     
