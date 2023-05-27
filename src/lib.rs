@@ -9,6 +9,11 @@ pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
 
+///
+/// Simple wrapper ontop of ldap3 crate. This wrapper provides a simple interface to perform LDAP operations
+/// including authentication.
+/// 
+/// 
 pub struct LdapClient {
     ldap: Ldap,
 }
@@ -162,6 +167,12 @@ impl LdapClient {
         Ok(SearchEntry::construct(record.to_owned()))
     }
 
+    ///
+    /// Search a single value from the LDAP server. The search is performed using the provided filter.
+    /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
+    /// This operatrion is useful when records has single value attributes. 
+    /// Result will be mapped to a struct of type T.
+    /// 
     pub async fn search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -175,6 +186,12 @@ impl LdapClient {
         LdapClient::map_to_struct(json)
     }
 
+    ///
+    /// Search a single value from the LDAP server. The search is performed using the provided filter.
+    /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
+    /// This operatrion is useful when records has multi value attributes. 
+    /// Result will be mapped to a struct of type T.
+    /// 
     pub async fn search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -288,6 +305,11 @@ impl LdapClient {
         Ok(entries)
     }
 
+    ///
+    /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
+    /// This operatrion is useful when records has multi value attributes. 
+    /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
+    /// 
     pub async fn streaming_search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -313,6 +335,11 @@ impl LdapClient {
         Ok(data)
     }
 
+    ///
+    /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
+    /// This operatrion is useful when records has single value attributes. 
+    /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
+    /// 
     pub async fn streaming_search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -339,7 +366,7 @@ impl LdapClient {
     }
 
     ///
-    /// base = "ou=people,dc=abc,dc=com"
+    /// base = "ou=people,dc=example,dc=com"
     ///
     pub async fn create<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
