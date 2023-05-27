@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         ],
     };
 
-    let result: Result<User,Error> =  client.search("dc=example,dc=com",Scope::Subtree,&filter, vec!["cn","sn","c","l"]);
+    let result: Result<User,Error> =  client.search("dc=example,dc=com",Scope::Subtree,&filter, vec!["cn","sn","c","l"]).await;
     Ok(ldap.unbind()?)
 }
 ```
