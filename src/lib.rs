@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use filter::Filter;
 use ldap3::{
     log::{debug, error},
     Ldap, LdapConnAsync, LdapError, Mod, Scope, SearchEntry, StreamState,
 };
 
+pub mod filter;
+pub mod pool;
 pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
@@ -15,6 +18,7 @@ const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
 /// 
 /// 
 pub struct LdapClient {
+    id: usize,
     ldap: Ldap,
 }
 
@@ -32,6 +36,23 @@ impl LdapClient {
     ///
     /// Open a connection to an LDAP server specified by `url`.
     /// 
+    async fn for_pool(url: &str, bind_dn: &str, bind_pw: &str, id: usize) -> Self {
+
+        let (conn, mut ldap) = LdapConnAsync::new(url).await.unwrap();
+
+        ldap3::drive!(conn);
+        ldap.simple_bind(bind_dn, bind_pw)
+            .await
+            .unwrap()
+            .success()
+            .unwrap();
+
+        LdapClient { ldap, id }
+    }
+
+    ///
+    /// Open a connection to an LDAP server specified by `url`.
+    /// 
     pub async fn from(url: &str, bind_dn: &str, bind_pw: &str) -> Self {
 
         let (conn, mut ldap) = LdapConnAsync::new(url).await.unwrap();
@@ -43,14 +64,14 @@ impl LdapClient {
             .success()
             .unwrap();
 
-        LdapClient { ldap }
+        LdapClient { ldap, id: 0 }
     }
 
     ///
     /// Create a new LdapClient from an existing Ldap connection.
     /// 
     pub fn from_ldap(ldap: Ldap) -> Self {
-        LdapClient { ldap }
+        LdapClient { ldap, id: 0 }
     }
 
     pub async fn unbind(&mut self) -> Result<(), String> {
@@ -93,9 +114,9 @@ impl LdapClient {
             )));
         }
 
-        let user_record = data.get(0).unwrap().to_owned();
-        let user_record = SearchEntry::construct(user_record);
-        let result: HashMap<&str, String> = user_record
+        let record = data.get(0).unwrap().to_owned();
+        let record = SearchEntry::construct(record);
+        let result: HashMap<&str, String> = record
             .attrs
             .iter()
             .filter(|(_, value)| !value.is_empty())
@@ -472,101 +493,7 @@ impl LdapClient {
     }
 }
 
-pub trait Filter {
-    fn filter(&self) -> String;
-}
 
-pub struct AndFilter {
-    filters: Vec<Box<dyn Filter>>,
-}
-
-impl AndFilter {
-    pub fn new() -> Self {
-        AndFilter {
-            filters: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, filter: Box<dyn Filter>) {
-        self.filters.push(filter);
-    }
-}
-
-impl Filter for AndFilter {
-    fn filter(&self) -> String {
-        let mut filter = String::from("(&");
-        for f in &self.filters {
-            filter.push_str(&f.filter());
-        }
-        filter.push(')');
-        filter
-    }
-}
-
-pub struct OrFilter {
-    filters: Vec<Box<dyn Filter>>,
-}
-
-impl OrFilter {
-    pub fn new() -> Self {
-        OrFilter {
-            filters: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, filter: Box<dyn Filter>) {
-        self.filters.push(filter);
-    }
-}
-
-impl Filter for OrFilter {
-    fn filter(&self) -> String {
-        let mut filter = String::from("(|");
-        for f in &self.filters {
-            filter.push_str(&f.filter());
-        }
-        filter.push(')');
-        filter
-    }
-}
-
-pub struct EqFilter {
-    attribute: String,
-    value: String,
-}
-
-impl Filter for EqFilter {
-    fn filter(&self) -> String {
-        format!("({}={})", self.attribute, self.value)
-    }
-}
-
-pub struct NotFilter {
-    filter: Box<dyn Filter>,
-}
-
-impl NotFilter {
-    pub fn new(filter: Box<dyn Filter>) -> Self {
-        NotFilter { filter }
-    }
-}
-
-impl Filter for NotFilter {
-    fn filter(&self) -> String {
-        format!("(!{})", self.filter.filter())
-    }
-}
-
-pub struct LikeFilter {
-    attribute: String,
-    value: String,
-}
-
-impl Filter for LikeFilter {
-    fn filter(&self) -> String {
-        format!("({}~={})", self.attribute, self.value)
-    }
-}
 
 #[derive(Debug)]
 pub enum Error {
