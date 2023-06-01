@@ -15,8 +15,8 @@ const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
 ///
 /// Simple wrapper ontop of ldap3 crate. This wrapper provides a simple interface to perform LDAP operations
 /// including authentication.
-/// 
-/// 
+///
+///
 pub struct LdapClient {
     id: usize,
     ldap: Ldap,
@@ -25,19 +25,17 @@ pub struct LdapClient {
 impl LdapClient {
     ///
     /// Returns the ldap3 client
-    /// 
+    ///
     pub fn get_inner(&self) -> Ldap {
         self.ldap.clone()
     }
 }
 
 impl LdapClient {
-
     ///
     /// Open a connection to an LDAP server specified by `url`.
-    /// 
+    ///
     async fn for_pool(url: &str, bind_dn: &str, bind_pw: &str, id: usize) -> Self {
-
         let (conn, mut ldap) = LdapConnAsync::new(url).await.unwrap();
 
         ldap3::drive!(conn);
@@ -52,9 +50,8 @@ impl LdapClient {
 
     ///
     /// Open a connection to an LDAP server specified by `url`.
-    /// 
+    ///
     pub async fn from(url: &str, bind_dn: &str, bind_pw: &str) -> Self {
-
         let (conn, mut ldap) = LdapConnAsync::new(url).await.unwrap();
 
         ldap3::drive!(conn);
@@ -69,7 +66,7 @@ impl LdapClient {
 
     ///
     /// Create a new LdapClient from an existing Ldap connection.
-    /// 
+    ///
     pub fn from_ldap(ldap: Ldap) -> Self {
         LdapClient { ldap, id: 0 }
     }
@@ -191,9 +188,9 @@ impl LdapClient {
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
-    /// This operatrion is useful when records has single value attributes. 
+    /// This operatrion is useful when records has single value attributes.
     /// Result will be mapped to a struct of type T.
-    /// 
+    ///
     pub async fn search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -210,9 +207,9 @@ impl LdapClient {
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
-    /// This operatrion is useful when records has multi value attributes. 
+    /// This operatrion is useful when records has multi value attributes.
     /// Result will be mapped to a struct of type T.
-    /// 
+    ///
     pub async fn search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -328,9 +325,9 @@ impl LdapClient {
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// This operatrion is useful when records has multi value attributes. 
+    /// This operatrion is useful when records has multi value attributes.
     /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
-    /// 
+    ///
     pub async fn streaming_search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -358,9 +355,9 @@ impl LdapClient {
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// This operatrion is useful when records has single value attributes. 
+    /// This operatrion is useful when records has single value attributes.
     /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
-    /// 
+    ///
     pub async fn streaming_search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -492,8 +489,6 @@ impl LdapClient {
         Ok(())
     }
 }
-
-
 
 #[derive(Debug)]
 pub enum Error {

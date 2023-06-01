@@ -86,10 +86,110 @@ impl Filter for NotFilter {
 pub struct LikeFilter {
     attribute: String,
     value: String,
+    pre: bool,
 }
 
 impl Filter for LikeFilter {
     fn filter(&self) -> String {
-        format!("({}~={})", self.attribute, self.value)
+        if self.pre {
+            format!("({}=*{})", self.attribute, self.value)
+        } else {
+            format!("({}={}*)", self.attribute, self.value)
+        }
+    }
+}
+
+pub struct ContainsFilter {
+    attribute: String,
+    value: String,
+}
+
+impl Filter for ContainsFilter {
+    fn filter(&self) -> String {
+        format!("({}=*{}*)", self.attribute, self.value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_eq_filter() {
+        let filter = EqFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+        };
+        assert_eq!(filter.filter(), "(cn=test)");
+    }
+
+    #[test]
+    fn test_not_eq_filter() {
+        let filter = NotFilter::new(Box::new(EqFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+        }));
+        assert_eq!(filter.filter(), "(!(cn=test))");
+    }
+
+    #[test]
+    fn test_pre_like_filter() {
+        let filter = LikeFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+            pre: true,
+        };
+
+        assert_eq!(filter.filter(), "(cn=*test)");
+    }
+
+    #[test]
+    fn test_post_like_filter() {
+        let filter = LikeFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+            pre: false,
+        };
+
+        assert_eq!(filter.filter(), "(cn=test*)");
+    }
+
+    #[test]
+    fn test_or_filter() {
+        let mut or_filter = OrFilter::new();
+        or_filter.add(Box::new(EqFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+        }));
+        or_filter.add(Box::new(EqFilter {
+            attribute: "cn".to_string(),
+            value: "test2".to_string(),
+        }));
+        assert_eq!(or_filter.filter(), "(|(cn=test)(cn=test2))");
+    }
+
+    #[test]
+    fn test_and_filter() {
+        let mut and_filter = AndFilter::new();
+        and_filter.add(Box::new(EqFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+        }));
+        and_filter.add(Box::new(EqFilter {
+            attribute: "cn".to_string(),
+            value: "test2".to_string(),
+        }));
+        assert_eq!(and_filter.filter(), "(&(cn=test)(cn=test2))");
+    }
+
+    #[test]
+    fn test_contains_filter() {
+        let filter = ContainsFilter {
+            attribute: "cn".to_string(),
+            value: "test".to_string(),
+        };
+
+        assert_eq!(filter.filter(), "(cn=*test*)");
     }
 }
