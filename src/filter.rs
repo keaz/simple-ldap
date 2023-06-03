@@ -62,8 +62,7 @@ pub struct EqFilter {
 }
 
 impl EqFilter {
-    
-    pub fn from(attribute: String,value: String) -> Self {
+    pub fn from(attribute: String, value: String) -> Self {
         EqFilter { attribute, value }
     }
 }
