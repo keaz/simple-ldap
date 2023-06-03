@@ -61,6 +61,13 @@ pub struct EqFilter {
     value: String,
 }
 
+impl EqFilter {
+    
+    pub fn from(attribute: String,value: String) -> Self {
+        EqFilter { attribute, value }
+    }
+}
+
 impl Filter for EqFilter {
     fn filter(&self) -> String {
         format!("({}={})", self.attribute, self.value)

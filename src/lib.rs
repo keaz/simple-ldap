@@ -11,7 +11,7 @@ pub mod pool;
 pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
-
+const NO_SUCH_RECORD : u32 = 32;
 ///
 /// Simple wrapper ontop of ldap3 crate. This wrapper provides a simple interface to perform LDAP operations
 /// including authentication.
@@ -168,7 +168,7 @@ impl LdapClient {
 
         let records = result.unwrap().0;
 
-        if records.len() > 0 {
+        if records.len() > 1 {
             return Err(Error::MultipleResults(format!(
                 "Found multiple records for the search criteria"
             )));
@@ -386,7 +386,7 @@ impl LdapClient {
     ///
     /// base = "ou=people,dc=example,dc=com"
     ///
-    pub async fn create<T: for<'a> serde::Deserialize<'a>>(
+    pub async fn create(
         &mut self,
         uid: &str,
         base: &str,
@@ -426,10 +426,19 @@ impl LdapClient {
 
         let res = res.unwrap().success();
         if let Err(err) = res {
-            return Err(Error::Update(
-                format!("Error updating user: {:?}", err),
-                err,
-            ));
+            match err {
+                LdapError::LdapResult { result } => {
+                    if  result.rc == NO_SUCH_RECORD {
+                        return Err(Error::NotFound(format!("No records found for the uid: {:?}", uid)));
+                    }
+                },
+                _ => {
+                    return Err(Error::Update(
+                        format!("Error updating user: {:?}", err),
+                        err,
+                    ));
+                }
+            }
         }
 
         if new_udid.is_none() {
@@ -504,7 +513,10 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
+    use ldap3::tokio;
     use serde::Deserialize;
+
+    use crate::filter::EqFilter;
 
     use super::*;
 
@@ -563,4 +575,107 @@ mod tests {
         key1: String,
         key2: String,
     }
+
+    #[tokio::test]
+    async fn test_open_connection() {
+        let ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        assert_eq!(ldap.id,0);
+    }
+
+    #[tokio::test]
+    async fn test_create_record() {
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+
+        let data = vec![("objectClass",HashSet::from(["organizationalPerson","inetorgperson","top","person"])),
+        ("uid",HashSet::from(["123"])),("cn",HashSet::from(["Kasun"])),("sn",HashSet::from(["Ranasingh"]))];
+        let result = ldap.create("123", "ou=people,dc=example,dc=com", data).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_search_record(){
+        
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let name_filter = EqFilter::from("cn".to_string(), "Kasun".to_string());
+        let user = ldap.search::<User>("ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn","sn","uid"]).await;
+        assert!(user.is_ok());
+        let user = user.unwrap();
+        assert_eq!(user.cn,"Kasun");
+    }
+
+    #[tokio::test]
+    async fn test_search_no_record(){
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let name_filter = EqFilter::from("cn".to_string(), "KasunX".to_string());
+        let user = ldap.search::<User>("ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn","sn","uid"]).await;
+        assert!(user.is_err());
+        let er = user.err().unwrap();
+        match er {
+            Error::NotFound(_) => assert!(true),
+            _ => assert!(false)
+        } 
+    }
+
+    #[tokio::test]
+    async fn test_search_multiple_record(){
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let name_filter = EqFilter::from("cn".to_string(), "Duplicate".to_string());
+        let user = ldap.search::<User>("ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn","sn","uid"]).await;
+        assert!(user.is_err());
+        let er = user.err().unwrap();
+        match er {
+            Error::MultipleResults(_) => assert!(true),
+            _ => assert!(false)
+        } 
+    }
+
+    #[tokio::test]
+    async fn test_update_record(){
+
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let data = vec![Mod::Replace("cn",HashSet::from(["Jhon_Update"])),Mod::Replace("sn",HashSet::from(["Smith_Update"]))];
+        let result = ldap.update("xxxx", "ou=people,dc=example,dc=com", data, Option::None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_update_no_record(){
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let data = vec![Mod::Replace("cn",HashSet::from(["Kasun_Update"])),Mod::Replace("sn",HashSet::from(["Ranasinghe_Update"]))];
+        let result = ldap.update("123x", "ou=people,dc=example,dc=com", data, Option::None).await;
+        assert!(result.is_err());
+        let er = result.err().unwrap();
+        match er {
+            Error::NotFound(_) => assert!(true),
+            _ => assert!(false)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_uid_record(){
+
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let data = vec![Mod::Replace("cn",HashSet::from(["Jhon_Update"])),Mod::Replace("sn",HashSet::from(["Smith_Update"]))];
+        let result = ldap.update("xxxxx", "ou=people,dc=example,dc=com", data, Option::Some("xxxxy")).await;
+
+        assert!(result.is_ok());
+
+        let mut ldap = LdapClient::from("ldap://localhost:1389/dc=example,dc=com", "cn=manager", "password").await;
+        let name_filter = EqFilter::from("uid".to_string(), "xxxxy".to_string());
+        let user = ldap.search::<User>("ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn","sn","uid"]).await;
+        assert!(user.is_ok());
+        let user = user.unwrap();
+        assert_eq!(user.cn,"Jhon_Update");
+        assert_eq!(user.sn,"Smith_Update");
+    }
+
+
+    #[derive(Deserialize)]
+    struct User{
+        pub uid: String,
+        pub cn: String,
+        pub sn: String,
+    }
+
+
 }
