@@ -604,12 +604,19 @@ mod tests {
                 "objectClass",
                 HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
             ),
-            ("uid", HashSet::from(["123"])),
+            (
+                "uid",
+                HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),
+            ),
             ("cn", HashSet::from(["Kasun"])),
             ("sn", HashSet::from(["Ranasingh"])),
         ];
         let result = ldap
-            .create("123", "ou=people,dc=example,dc=com", data)
+            .create(
+                "bd9b91ec-7a69-4166-bf67-cc7e553b2fd9",
+                "ou=people,dc=example,dc=com",
+                data,
+            )
             .await;
         assert!(result.is_ok());
     }
@@ -622,7 +629,7 @@ mod tests {
             "password",
         )
         .await;
-        let name_filter = EqFilter::from("cn".to_string(), "Kasun".to_string());
+        let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
         let user = ldap
             .search::<User>(
                 "ou=people,dc=example,dc=com",
@@ -633,7 +640,8 @@ mod tests {
             .await;
         assert!(user.is_ok());
         let user = user.unwrap();
-        assert_eq!(user.cn, "Kasun");
+        assert_eq!(user.cn, "Sam");
+        assert_eq!(user.sn, "Smith");
     }
 
     #[tokio::test]
@@ -644,7 +652,7 @@ mod tests {
             "password",
         )
         .await;
-        let name_filter = EqFilter::from("cn".to_string(), "KasunX".to_string());
+        let name_filter = EqFilter::from("cn".to_string(), "SamX".to_string());
         let user = ldap
             .search::<User>(
                 "ou=people,dc=example,dc=com",
@@ -669,7 +677,7 @@ mod tests {
             "password",
         )
         .await;
-        let name_filter = EqFilter::from("cn".to_string(), "Duplicate".to_string());
+        let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
         let user = ldap
             .search::<User>(
                 "ou=people,dc=example,dc=com",
@@ -696,10 +704,15 @@ mod tests {
         .await;
         let data = vec![
             Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
-            Mod::Replace("sn", HashSet::from(["Smith_Update"])),
+            Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
         ];
         let result = ldap
-            .update("xxxx", "ou=people,dc=example,dc=com", data, Option::None)
+            .update(
+                "e219fbc0-6df5-4bc3-a6ee-986843bb157e",
+                "ou=people,dc=example,dc=com",
+                data,
+                Option::None,
+            )
             .await;
         assert!(result.is_ok());
     }
@@ -713,11 +726,16 @@ mod tests {
         )
         .await;
         let data = vec![
-            Mod::Replace("cn", HashSet::from(["Kasun_Update"])),
-            Mod::Replace("sn", HashSet::from(["Ranasinghe_Update"])),
+            Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
+            Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
         ];
         let result = ldap
-            .update("123x", "ou=people,dc=example,dc=com", data, Option::None)
+            .update(
+                "032a26b4-9f00-4a29-99c8-15d463a29290",
+                "ou=people,dc=example,dc=com",
+                data,
+                Option::None,
+            )
             .await;
         assert!(result.is_err());
         let er = result.err().unwrap();
@@ -736,15 +754,15 @@ mod tests {
         )
         .await;
         let data = vec![
-            Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
-            Mod::Replace("sn", HashSet::from(["Smith_Update"])),
+            Mod::Replace("cn", HashSet::from(["David_Update"])),
+            Mod::Replace("sn", HashSet::from(["Hanks_Update"])),
         ];
         let result = ldap
             .update(
-                "xxxxx",
+                "cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b",
                 "ou=people,dc=example,dc=com",
                 data,
-                Option::Some("xxxxy"),
+                Option::Some("6da70e51-7897-411f-9290-649ebfcb3269"),
             )
             .await;
 
@@ -756,7 +774,10 @@ mod tests {
             "password",
         )
         .await;
-        let name_filter = EqFilter::from("uid".to_string(), "xxxxy".to_string());
+        let name_filter = EqFilter::from(
+            "uid".to_string(),
+            "6da70e51-7897-411f-9290-649ebfcb3269".to_string(),
+        );
         let user = ldap
             .search::<User>(
                 "ou=people,dc=example,dc=com",
@@ -767,8 +788,8 @@ mod tests {
             .await;
         assert!(user.is_ok());
         let user = user.unwrap();
-        assert_eq!(user.cn, "Jhon_Update");
-        assert_eq!(user.sn, "Smith_Update");
+        assert_eq!(user.cn, "David_Update");
+        assert_eq!(user.sn, "Hanks_Update");
     }
 
     #[derive(Deserialize)]
