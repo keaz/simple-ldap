@@ -340,6 +340,10 @@ impl LdapClient {
             .streaming_search_inner(base, scope, filter, limit, attributes)
             .await?;
 
+        if entries.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let jsons = entries
             .iter()
             .map(|entry| LdapClient::create_json_signle_value(entry.to_owned()).unwrap())
@@ -491,13 +495,24 @@ impl LdapClient {
         }
         let delete = delete.unwrap().success();
         if let Err(err) = delete {
-            return Err(Error::Delete(
-                format!("Error deleting user: {:?}", err),
-                err,
-            ));
+            match err {
+                LdapError::LdapResult { result } => {
+                    if result.rc == NO_SUCH_RECORD {
+                        return Err(Error::NotFound(format!(
+                            "No records found for the uid: {:?}",
+                            uid
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(Error::Delete(
+                        format!("Error deleting user: {:?}", err),
+                        err,
+                    ));
+                }
+            }
         }
-        let delete = delete.unwrap();
-        debug!("Sucessfully deleted record result: {:?}", delete);
+        debug!("Sucessfully deleted record result: {:?}", uid);
         Ok(())
     }
 }
@@ -519,7 +534,7 @@ mod tests {
     use ldap3::tokio;
     use serde::Deserialize;
 
-    use crate::filter::EqFilter;
+    use crate::filter::{ContainsFilter, EqFilter};
 
     use super::*;
 
@@ -790,6 +805,95 @@ mod tests {
         let user = user.unwrap();
         assert_eq!(user.cn, "David_Update");
         assert_eq!(user.sn, "Hanks_Update");
+    }
+
+    #[tokio::test]
+    async fn test_streaming_search() {
+        let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
+        let result = ldap
+            .streaming_search::<User>(
+                "ou=people,dc=example,dc=com",
+                self::ldap3::Scope::OneLevel,
+                &name_filter,
+                2,
+                vec!["cn", "sn", "uid"],
+            )
+            .await;
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(result.len() == 2);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_search_no_records() {
+        let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
+        let result = ldap
+            .streaming_search::<User>(
+                "ou=people,dc=example,dc=com",
+                self::ldap3::Scope::OneLevel,
+                &name_filter,
+                2,
+                vec!["cn", "sn", "uid"],
+            )
+            .await;
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let result = ldap
+            .delete(
+                "4d9b08fe-9a14-4df0-9831-ea9992837f0d",
+                "ou=people,dc=example,dc=com",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_no_record_delete() {
+        let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let result = ldap
+            .delete(
+                "4d9b08fe-9a14-4df0-9831-ea9992837f0x",
+                "ou=people,dc=example,dc=com",
+            )
+            .await;
+        assert!(result.is_err());
+        let er = result.err().unwrap();
+        match er {
+            Error::NotFound(_) => assert!(true),
+            _ => assert!(false),
+        }
     }
 
     #[derive(Deserialize)]

@@ -78,7 +78,7 @@ pub struct NotFilter {
 }
 
 impl NotFilter {
-    pub fn new(filter: Box<dyn Filter>) -> Self {
+    pub fn from(filter: Box<dyn Filter>) -> Self {
         NotFilter { filter }
     }
 }
@@ -95,6 +95,16 @@ pub struct LikeFilter {
     pre: bool,
 }
 
+impl LikeFilter {
+    pub fn from(attribute: String, value: String, pre: bool) -> Self {
+        LikeFilter {
+            attribute,
+            value,
+            pre,
+        }
+    }
+}
+
 impl Filter for LikeFilter {
     fn filter(&self) -> String {
         if self.pre {
@@ -108,6 +118,12 @@ impl Filter for LikeFilter {
 pub struct ContainsFilter {
     attribute: String,
     value: String,
+}
+
+impl ContainsFilter {
+    pub fn from(attribute: String, value: String) -> Self {
+        ContainsFilter { attribute, value }
+    }
 }
 
 impl Filter for ContainsFilter {
@@ -132,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_not_eq_filter() {
-        let filter = NotFilter::new(Box::new(EqFilter {
+        let filter = NotFilter::from(Box::new(EqFilter {
             attribute: "cn".to_string(),
             value: "test".to_string(),
         }));
@@ -141,23 +157,13 @@ mod tests {
 
     #[test]
     fn test_pre_like_filter() {
-        let filter = LikeFilter {
-            attribute: "cn".to_string(),
-            value: "test".to_string(),
-            pre: true,
-        };
-
+        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), true);
         assert_eq!(filter.filter(), "(cn=*test)");
     }
 
     #[test]
     fn test_post_like_filter() {
-        let filter = LikeFilter {
-            attribute: "cn".to_string(),
-            value: "test".to_string(),
-            pre: false,
-        };
-
+        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), false);
         assert_eq!(filter.filter(), "(cn=test*)");
     }
 
@@ -191,11 +197,7 @@ mod tests {
 
     #[test]
     fn test_contains_filter() {
-        let filter = ContainsFilter {
-            attribute: "cn".to_string(),
-            value: "test".to_string(),
-        };
-
+        let filter = ContainsFilter::from("cn".to_string(), "test".to_string());
         assert_eq!(filter.filter(), "(cn=*test*)");
     }
 }

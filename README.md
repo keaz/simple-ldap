@@ -19,7 +19,7 @@ use simple-ldap::{LdapClient,Error,EqFilter};
 use simple-ldap::ldap3::Scope;
 
 #[tokio::main]
-fn main() -> Result<()> {
+async fn main() -> Result<()> {
     let mut ldap = LdapClient::from(
             "ldap://localhost:1389/dc=example,dc=com",
             "cn=manager",
@@ -56,7 +56,7 @@ use simple-ldap::{LdapClient,Error,EqFilter};
 use simple-ldap::ldap3::Scope;
 
 #[tokio::main]
-fn main() -> Result<()> {
+async fn main() -> Result<()> {
     let mut ldap = LdapClient::from(
             "ldap://localhost:1389/dc=example,dc=com",
             "cn=manager",
@@ -74,6 +74,37 @@ fn main() -> Result<()> {
             .await;
         assert!(user.is_ok());
         let user = user.unwrap();
+    Ok(ldap.unbind().await?)
+}
+```
+
+### Search Stream records
+```rust
+use simple-ldap::{LdapClient,Error,EqFilter};
+use simple-ldap::ldap3::Scope;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
+        let result = ldap
+            .streaming_search::<User>(
+                "ou=people,dc=example,dc=com",
+                self::ldap3::Scope::OneLevel,
+                &name_filter,
+                2,
+                vec!["cn", "sn", "uid"],
+            )
+            .await;
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(result.len() == 2);
     Ok(ldap.unbind().await?)
 }
 ```
@@ -97,6 +128,26 @@ async fn main() -> Result<()> {
                 "ou=people,dc=example,dc=com",
                 data,
                 Option::None,
+            )
+            .await;
+    Ok(ldap.unbind().await?)
+}
+```
+
+### Delete a record
+```rust
+async fn main() -> Result<()> {
+    let mut ldap = LdapClient::from(
+            "ldap://localhost:1389/dc=example,dc=com",
+            "cn=manager",
+            "password",
+        )
+        .await;
+
+        let result = ldap
+            .delete(
+                "4d9b08fe-9a14-4df0-9831-ea9992837f0d",
+                "ou=people,dc=example,dc=com",
             )
             .await;
     Ok(ldap.unbind().await?)
