@@ -1,0 +1,78 @@
+version: 1
+
+dn: ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+objectClass: top
+ou: people
+description: Users
+
+dn: uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: Sam
+sn: Smith
+ou: people
+uid: f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5
+
+dn: uid=42b05942-4f18-4279-827d-36534da1e437,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: James
+sn: Gunn
+ou: people
+uid: 42b05942-4f18-4279-827d-36534da1e437
+
+dn: uid=0dbaece8-f5f8-4e85-97d8-8bd614304bef,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: James
+sn: Gunn
+ou: people
+uid: 0dbaece8-f5f8-4e85-97d8-8bd614304bef
+
+dn: uid=0xbaece8-f5f8-4e85-97d8-8bd614304bef,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: James
+sn: Gunn
+ou: people
+uid: 0xbaece8-f5f8-4e85-97d8-8bd614304bef
+
+dn: uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: Jhone
+sn: Eliet
+ou: people
+uid: e219fbc0-6df5-4bc3-a6ee-986843bb157e
+
+dn: uid=cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: David
+sn: Hanks
+ou: people
+uid: cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b
+
+dn: uid=4d9b08fe-9a14-4df0-9831-ea9992837f0d,ou=people,dc=example,dc=com
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+cn: David
+sn: Hanks
+ou: people
+uid: 4d9b08fe-9a14-4df0-9831-ea9992837f0d
+

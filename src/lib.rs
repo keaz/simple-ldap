@@ -597,7 +597,7 @@ mod tests {
     #[tokio::test]
     async fn test_open_connection() {
         let ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -608,7 +608,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -639,7 +639,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -662,7 +662,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_no_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -687,7 +687,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_multiple_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -712,7 +712,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -735,7 +735,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_no_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -763,7 +763,7 @@ mod tests {
     #[tokio::test]
     async fn test_update_uid_record() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -784,7 +784,7 @@ mod tests {
         assert!(result.is_ok());
 
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -810,7 +810,7 @@ mod tests {
     #[tokio::test]
     async fn test_streaming_search() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -834,7 +834,7 @@ mod tests {
     #[tokio::test]
     async fn test_streaming_search_no_records() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -858,7 +858,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )
@@ -876,7 +876,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_record_delete() {
         let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
+            "ldap://ldap_server:1389/dc=example,dc=com",
             "cn=manager",
             "password",
         )

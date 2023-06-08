@@ -1,0 +1,30 @@
+version: '3.9'
+
+services:
+  ldap_server:
+    hostname: ldap_server
+    image: openidentityplatform/opendj
+    ports:
+      - '1389:1389'
+      - '4444:4444'
+    environment:
+      - BASE_DN=dc=example,dc=com
+      - ROOT_USER_DN=cn=manager
+      - ROOT_PASSWORD=password
+    volumes:
+      - ./data/:/opt/opendj/import-data/
+      - ./data/:/opt/opendj/bootstrap/data/
+    networks:
+      - backend
+  rust_test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - ldap_server
+    networks:
+      - backend
+
+networks:
+  backend:
+    external: false
