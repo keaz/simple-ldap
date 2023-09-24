@@ -101,12 +101,12 @@ impl LdapClient {
             .unwrap();
         let (data, _rs) = rs.success().unwrap();
         if data.is_empty() {
-            return Err(Error::NotFound(format!("No user found {:?}", uid)));
+            return Err(Error::NotFound(format!("No record found {:?}", uid)));
         }
 
         if data.len() > 1 {
             return Err(Error::MultipleResults(format!(
-                "Found multiple users for uid {:?}",
+                "Found multiple records for uid {:?}",
                 uid
             )));
         }
@@ -154,14 +154,14 @@ impl LdapClient {
             .await;
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for user: {:?}", error),
+                format!("Error searching for record: {:?}", error),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for user: {:?}", error),
+                format!("Error searching for record: {:?}", error),
                 error,
             ));
         }
@@ -187,7 +187,7 @@ impl LdapClient {
 
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
-    /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
+    /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
     /// This operatrion is useful when records has single value attributes.
     /// Result will be mapped to a struct of type T.
     ///
@@ -206,7 +206,7 @@ impl LdapClient {
 
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
-    /// The filter should be a filter that matches a single user. if the filter matches multiple users, an error is returned.
+    /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
     /// This operatrion is useful when records has multi value attributes.
     /// Result will be mapped to a struct of type T.
     ///
@@ -283,7 +283,7 @@ impl LdapClient {
             .await;
         if let Err(error) = search_stream {
             return Err(Error::Query(
-                format!("Error searching for user: {:?}", error),
+                format!("Error searching for record: {:?}", error),
                 error,
             ));
         }
@@ -399,12 +399,12 @@ impl LdapClient {
         let dn = format!("uid={},{}", uid, base);
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
-            return Err(Error::Create(format!("Error saving user: {:?}", err), err));
+            return Err(Error::Create(format!("Error saving record: {:?}", err), err));
         }
         let save = save.unwrap().success();
 
         if let Err(err) = save {
-            return Err(Error::Create(format!("Error saving user: {:?}", err), err));
+            return Err(Error::Create(format!("Error saving record: {:?}", err), err));
         }
         let res = save.unwrap();
         debug!("Sucessfully created record result: {:?}", res);
@@ -416,14 +416,14 @@ impl LdapClient {
         uid: &str,
         base: &str,
         data: Vec<Mod<&str>>,
-        new_udid: Option<&str>,
+        new_uid: Option<&str>,
     ) -> Result<(), Error> {
         let dn = format!("uid={},{}", uid, base);
 
         let res = self.ldap.modify(dn.as_str(), data).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error updating user: {:?}", err),
+                format!("Error updating record: {:?}", err),
                 err,
             ));
         }
@@ -441,37 +441,37 @@ impl LdapClient {
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error updating user: {:?}", err),
+                        format!("Error updating record: {:?}", err),
                         err,
                     ));
                 }
             }
         }
 
-        if new_udid.is_none() {
+        if new_uid.is_none() {
             return Ok(());
         }
 
-        let new_udid = new_udid.unwrap();
-        if !uid.eq_ignore_ascii_case(new_udid) {
-            let new_dn = format!("uid={}", new_udid);
+        let new_uid = new_uid.unwrap();
+        if !uid.eq_ignore_ascii_case(new_uid) {
+            let new_dn = format!("uid={}", new_uid);
             let dn_update = self
                 .ldap
                 .modifydn(dn.as_str(), new_dn.as_str(), true, None)
                 .await;
             if let Err(err) = dn_update {
-                error!("Failed to update dn for user {:?} error {:?}", uid, err);
+                error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for user {:?}", uid),
+                    format!("Failed to update dn for record {:?}", uid),
                     err,
                 ));
             }
 
             let dn_update = dn_update.unwrap().success();
             if let Err(err) = dn_update {
-                error!("Failed to update dn for user {:?} error {:?}", uid, err);
+                error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for user {:?}", uid),
+                    format!("Failed to update dn for record {:?}", uid),
                     err,
                 ));
             }
@@ -489,7 +489,7 @@ impl LdapClient {
 
         if let Err(err) = delete {
             return Err(Error::Delete(
-                format!("Error deleting user: {:?}", err),
+                format!("Error deleting record: {:?}", err),
                 err,
             ));
         }
@@ -506,7 +506,7 @@ impl LdapClient {
                 }
                 _ => {
                     return Err(Error::Delete(
-                        format!("Error deleting user: {:?}", err),
+                        format!("Error deleting record: {:?}", err),
                         err,
                     ));
                 }

@@ -92,25 +92,29 @@ impl Filter for NotFilter {
 pub struct LikeFilter {
     attribute: String,
     value: String,
-    pre: bool,
+    wildcard_on: WildardOn,
+}
+
+pub enum WildardOn {
+    Pre,
+    Post
 }
 
 impl LikeFilter {
-    pub fn from(attribute: String, value: String, pre: bool) -> Self {
+    pub fn from(attribute: String, value: String, wildcard_on: WildardOn) -> Self {
         LikeFilter {
             attribute,
             value,
-            pre,
+            wildcard_on,
         }
     }
 }
 
 impl Filter for LikeFilter {
     fn filter(&self) -> String {
-        if self.pre {
-            format!("({}=*{})", self.attribute, self.value)
-        } else {
-            format!("({}={}*)", self.attribute, self.value)
+        match self.wildcard_on {
+            WildardOn::Pre => format!("({}=*{})", self.attribute, self.value),
+            WildardOn::Post => format!("({}={}*)", self.attribute, self.value),
         }
     }
 }
@@ -157,13 +161,13 @@ mod tests {
 
     #[test]
     fn test_pre_like_filter() {
-        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), true);
+        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), WildardOn::Pre);
         assert_eq!(filter.filter(), "(cn=*test)");
     }
 
     #[test]
     fn test_post_like_filter() {
-        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), false);
+        let filter = LikeFilter::from("cn".to_string(), "test".to_string(), WildardOn::Post);
         assert_eq!(filter.filter(), "(cn=test*)");
     }
 
