@@ -20,12 +20,15 @@ use simple-ldap::ldap3::Scope;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
-            "cn=manager",
-            "password",
-        )
-        .await;
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+        };
+        
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.get_connection().await;
 
         let data = vec![
             (
@@ -57,12 +60,15 @@ use simple-ldap::ldap3::Scope;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
-            "cn=manager",
-            "password",
-        )
-        .await;
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+        };
+        
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.get_connection().await;
         let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
         let user = ldap
             .search::<User>(
@@ -85,12 +91,15 @@ use simple-ldap::ldap3::Scope;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
-            "cn=manager",
-            "password",
-        )
-        .await;
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+        };
+        
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.get_connection().await;
 
         let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
         let result = ldap
@@ -112,12 +121,15 @@ async fn main() -> Result<()> {
 ### Update a record
 ```rust
 async fn main() -> Result<()> {
-    let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
-            "cn=manager",
-            "password",
-        )
-        .await;
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+        };
+        
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.get_connection().await;
         let data = vec![
             Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
             Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
@@ -137,12 +149,15 @@ async fn main() -> Result<()> {
 ### Delete a record
 ```rust
 async fn main() -> Result<()> {
-    let mut ldap = LdapClient::from(
-            "ldap://localhost:1389/dc=example,dc=com",
-            "cn=manager",
-            "password",
-        )
-        .await;
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+        };
+        
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.get_connection().await;
 
         let result = ldap
             .delete(

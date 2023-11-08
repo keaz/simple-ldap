@@ -1,92 +1,88 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
-
-use ldap3::tokio::sync::Mutex;
+use async_trait::async_trait;
+use deadpool::managed::{Metrics, RecycleResult};
+use ldap3::{LdapConnSettings, Ldap, LdapConnAsync};
+use log::debug;
+use serde::Deserialize;
 
 use crate::LdapClient;
 
-pub struct LdapPool {
-    not_used: Arc<Mutex<Vec<LdapClient>>>,
-    in_use: Arc<Mutex<HashSet<usize>>>,
-    configuration: PoolConfiguration,
-}
+pub struct Manager(String, LdapConnSettings);
+pub type Pool = deadpool::managed::Pool<Manager>;
 
-pub struct PoolConfiguration {
-    url: String,
-    bind_dn: String,
-    bind_pw: String,
-    pool_size: usize,
-    max_size: Option<usize>,
-}
-
-pub async fn from(configuration: PoolConfiguration) -> LdapPool {
-    let mut not_used = Vec::new();
-    let in_use = HashSet::new();
-
-    for i in 1..=configuration.pool_size {
-        let client = LdapClient::for_pool(
-            configuration.url.as_str(),
-            configuration.bind_dn.as_str(),
-            configuration.bind_pw.as_str(),
-            i,
-        )
-        .await;
-        not_used.push(client);
+/// LDAP Manager for the `deadpool` managed connection pool.
+impl Manager {
+    /// Creates a new manager with the given URL.
+    /// URL can be anything that can go Into a String (e.g. String or &str)
+    pub fn new<S: Into<String>>(ldap_url: S) -> Self {
+        Self(ldap_url.into(), LdapConnSettings::new())
     }
 
-    LdapPool {
-        not_used: Arc::new(Mutex::new(not_used)),
-        in_use: Arc::new(Mutex::new(in_use)),
-        configuration,
+    /// Set a custom LdapConnSettings object on the manager.
+    /// Returns a copy of the Manager.
+    pub fn with_connection_settings(mut self, settings: LdapConnSettings) -> Self {
+        self.1 = settings;
+        self
     }
 }
 
-impl LdapPool {
-    pub async fn get(&self) -> Result<LdapClient, PoolError> {
-        let mut not_used = self.not_used.lock().await;
-        while (not_used).len() == 0 {
-            if let Some(max_pool) = self.configuration.max_size {
-                let mut in_use = self.in_use.lock().await;
-                let in_use_size = (*in_use).len();
-                if in_use_size == max_pool {
-                    return Err(PoolError::MaxPoolReached(
-                        "Max pool size reached".to_string(),
-                    ));
-                }
-                let client = LdapClient::for_pool(
-                    self.configuration.url.as_str(),
-                    self.configuration.bind_dn.as_str(),
-                    self.configuration.bind_pw.as_str(),
-                    in_use_size + 1,
-                )
-                .await;
-                in_use.insert(client.id);
-                return Ok(client);
-            }
-            ldap3::tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+#[async_trait]
+impl deadpool::managed::Manager for Manager {
+    type Type = Ldap;
+    type Error = ldap3::LdapError;
 
-        let client = not_used.pop().unwrap();
-        let mut in_use = self.in_use.lock().await;
-        in_use.insert(client.id);
-        return Ok(client);
+    async fn create(&self) -> Result<Self::Type, Self::Error> {
+        debug!("Creating new connection");
+        let (conn, ldap) = LdapConnAsync::with_settings(self.1.clone(), &self.0).await?;
+        ldap3::drive!(conn);
+        Ok(ldap)
     }
 
-    pub async fn put(&self, client: LdapClient) -> Result<(), PoolError> {
-        let mut in_use = self.in_use.lock().await;
-        let is_in_used = in_use.remove(&client.id);
-        if !is_in_used {
-            return Err(PoolError::UnManagedClient(
-                "Client is not a managed client".to_string(),
-            ));
-        }
-        let mut not_used = self.not_used.lock().await;
-        not_used.push(client);
-
+    async fn recycle(
+        &self,
+        conn: &mut Self::Type,
+        _metrics: &Metrics,
+    ) -> RecycleResult<Self::Error> {
+        debug!("recycling connection");
+        conn.simple_bind("", "").await?;
         Ok(())
     }
 }
 
-pub enum PoolError {
-    MaxPoolReached(String),
-    UnManagedClient(String),
+
+pub async fn build_connection_pool(ldap_config: &LdapConfig) -> LdapPool {
+    let manager = Manager::new(&ldap_config.ldap_url);
+    let pool = Pool::builder(manager)
+        .max_size(ldap_config.pool_size)
+        .build()
+        .unwrap();
+    LdapPool {
+        pool,
+        config: ldap_config.clone(),
+    }
+}
+
+pub struct LdapPool {
+    pool: Pool,
+    config: LdapConfig,
+}
+
+impl LdapPool {
+    pub async fn get_connection(&self) -> LdapClient {
+        let mut ldap = self.pool.get().await.unwrap();
+        ldap.simple_bind(self.config.bind_dn.as_str(), self.config.bind_pw.as_str())
+            .await
+            .unwrap()
+            .success()
+            .unwrap();
+
+        LdapClient::from(ldap)
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct LdapConfig {
+    pub ldap_url: String,
+    pub bind_dn: String,
+    pub bind_pw: String,
+    pub pool_size: usize,
 }
