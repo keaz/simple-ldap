@@ -1,10 +1,16 @@
 version: 1
 
+dn: dc=example,dc=com
+objectClass: domain
+objectClass: top
+dc: example
+
 dn: ou=people,dc=example,dc=com
 objectClass: organizationalUnit
 objectClass: top
 ou: people
 description: Users
+
 
 dn: uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com
 objectClass: inetorgperson

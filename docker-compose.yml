@@ -17,8 +17,8 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", " netstat -an | grep -q 4444"]
-      interval: 15s
+      test: ["CMD-SHELL", "/opt/opendj/bin/status --bindDn cn=manager --bindPassword=password | grep 1389"]
+      interval: 5s
       timeout: 10s
       retries: 5
       start_period: 30s
@@ -27,7 +27,8 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - ldap_server
+      ldap_server: 
+        condition: service_healthy
     networks:
       - backend
 
