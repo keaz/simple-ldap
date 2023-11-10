@@ -1,7 +1,7 @@
 /// # Filter
-/// 
+///
 /// This module contains the implementation of the LDAP filter.
-/// 
+///
 
 /// The `Filter` trait is implemented by all the filters.
 pub trait Filter {
@@ -14,14 +14,13 @@ pub struct AndFilter {
 }
 
 impl AndFilter {
-
     /// Creates a new `AndFilter`.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::AndFilter;
-    /// 
+    ///
     /// let filter = AndFilter::new();
     /// ```
     pub fn new() -> Self {
@@ -31,15 +30,15 @@ impl AndFilter {
     }
 
     /// Adds a filter to the `AndFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `filter` - The filter to add.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::{AndFilter, EqFilter};
-    /// 
+    ///
     /// let mut filter = AndFilter::new();
     /// filter.add(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
     /// ```
@@ -65,14 +64,13 @@ pub struct OrFilter {
 }
 
 impl OrFilter {
-
     /// Creates a new `OrFilter`.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::OrFilter;
-    /// 
+    ///
     /// let filter = OrFilter::new();
     /// ```
     pub fn new() -> Self {
@@ -82,15 +80,15 @@ impl OrFilter {
     }
 
     /// Adds a filter to the `OrFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `filter` - The filter to add.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::{OrFilter, EqFilter};
-    /// 
+    ///
     /// let mut filter = OrFilter::new();
     /// filter.add(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
     /// ```
@@ -118,16 +116,16 @@ pub struct EqFilter {
 
 impl EqFilter {
     /// Creates a new `EqFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `attribute` - The attribute to filter.
     /// * `value` - The value of the attribute.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::EqFilter;
-    /// 
+    ///
     /// let filter = EqFilter::from("cn".to_string(), "test".to_string());
     /// ```
     pub fn from(attribute: String, value: String) -> Self {
@@ -149,15 +147,15 @@ pub struct NotFilter {
 
 impl NotFilter {
     /// Creates a new `NotFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `filter` - The filter to negate.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::{NotFilter, EqFilter};
-    /// 
+    ///
     /// let filter = NotFilter::from(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
     /// ```
     pub fn from(filter: Box<dyn Filter>) -> Self {
@@ -184,23 +182,22 @@ pub enum WildardOn {
     /// The wildcard is on the left of the value.
     Pre,
     /// The wildcard is on the right of the value.
-    Post
+    Post,
 }
 
 impl LikeFilter {
-
     /// Creates a new `LikeFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `attribute` - The attribute to filter.
     /// * `value` - The value of the attribute.
     /// * `wildcard_on` - The wildcard position.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::{LikeFilter, WildardOn};
-    /// 
+    ///
     /// let filter = LikeFilter::from("cn".to_string(), "test".to_string(), WildardOn::Pre);
     /// ```
     pub fn from(attribute: String, value: String, wildcard_on: WildardOn) -> Self {
@@ -229,18 +226,17 @@ pub struct ContainsFilter {
 }
 
 impl ContainsFilter {
-
     /// Creates a new `ContainsFilter`.
-    /// 
+    ///
     /// # Arguments
     /// * `attribute` - The attribute to filter.
     /// * `value` - The value of the attribute.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use ldap_rs::filter::ContainsFilter;
-    /// 
+    ///
     /// let filter = ContainsFilter::from("cn".to_string(), "test".to_string());
     /// ```
     pub fn from(attribute: String, value: String) -> Self {

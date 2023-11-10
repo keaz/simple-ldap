@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use deadpool::managed::{Metrics, RecycleResult};
-use ldap3::{LdapConnSettings, Ldap, LdapConnAsync};
+use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
 use log::debug;
 use serde::Deserialize;
 
@@ -47,7 +47,6 @@ impl deadpool::managed::Manager for Manager {
         Ok(())
     }
 }
-
 
 pub async fn build_connection_pool(ldap_config: &LdapConfig) -> LdapPool {
     let manager = Manager::new(&ldap_config.ldap_url);
