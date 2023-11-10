@@ -1,3 +1,10 @@
+//! # simple-ldap
+//! This is a high-level LDAP client library created by wrapping the rust LDAP3 clinet.
+//! This provides high-level functions that helps to interact with LDAP.
+//!
+//! # Documentation
+//! * [Examples Repository](https://github.com/keaz/simple-ldap)
+//!
 use std::collections::{HashMap, HashSet};
 
 use deadpool::managed::Object;
@@ -15,8 +22,8 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: [&str; 1] = ["entryDN"];
 const NO_SUCH_RECORD: u32 = 32;
 ///
-/// Simple wrapper ontop of ldap3 crate. This wrapper provides a simple interface to perform LDAP operations
-/// including authentication.
+/// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
+/// including authentication, search, update, delete
 ///
 ///
 pub struct LdapClient {
@@ -48,12 +55,41 @@ impl LdapClient {
     ///
     /// The user is authenticated by searching for the user in the LDAP server.
     /// The search is performed using the provided filter. The filter should be a filter that matches a single user.
+    /// 
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `uid` - The uid of the user
+    /// * `password` - The password of the user
+    /// * `filter` - The filter to search for the user
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if the authentication fails
+    /// 
+    /// # Example
+    /// ```
+    /// 
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
     ///
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    /// 
+    /// let result = ldap.authenticate("", "Sam", "password", Box::new(name_filter)).await;
+    /// ```
     pub async fn authenticate(
         &mut self,
         base: &str,
-        uid: String,
-        password: &String,
+        uid: &str,
+        password: &str,
         filter: Box<dyn Filter>,
     ) -> Result<(), Error> {
         let rs = self
@@ -157,6 +193,42 @@ impl LdapClient {
     /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
     /// This operatrion is useful when records has single value attributes.
     /// Result will be mapped to a struct of type T.
+    /// 
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `scope` - The scope of the search
+    /// * `filter` - The filter to search for the user
+    /// * `attributes` - The attributes to return from the search
+    /// 
+    /// # Returns
+    /// * `Result<T, Error>` - The result will be mapped to a struct of type T
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    ///
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    /// let user = ldap
+    /// .search::<User>(
+    ///    "ou=people,dc=example,dc=com",
+    ///    self::ldap3::Scope::OneLevel,
+    ///    &name_filter,
+    ///    vec!["cn", "sn", "uid"],
+    /// ).await;
+    /// 
+    /// ```
     ///
     pub async fn search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
@@ -174,8 +246,44 @@ impl LdapClient {
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
-    /// This operatrion is useful when records has multi value attributes.
-    /// Result will be mapped to a struct of type T.
+    /// This operatrion is useful when records has multi-valued attributes.
+    /// 
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `scope` - The scope of the search
+    /// * `filter` - The filter to search for the user
+    /// * `attributes` - The attributes to return from the search
+    /// 
+    /// # Returns
+    /// * `Result<T, Error>` - The result will be mapped to a struct of type T
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// 
+    /// #[derive(Debug, Deserialize)]
+    /// struct TestMultiValued {
+    ///    key1: Vec<String>,
+    ///    key2: Vec<String>,
+    /// }
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    /// let user = ldap.search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"]).await;
+    /// 
+    /// ```
     ///
     pub async fn search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
@@ -292,9 +400,45 @@ impl LdapClient {
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// This operatrion is useful when records has multi value attributes.
     /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
-    ///
+    /// 
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `scope` - The scope of the search
+    /// * `filter` - The filter to search for the user
+    /// * `limit` - The maximum number of records to return
+    /// * `attributes` - The attributes to return from the search
+    /// 
+    /// # Returns
+    /// * `Result<T, Error>` - The result will be mapped to a struct of type T
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// 
+    /// #[derive(Debug, Deserialize)]
+    /// struct TestMultiValued {
+    ///    key1: Vec<String>,
+    ///    key2: Vec<String>,
+    /// }
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    /// let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
+    /// 
+    /// ```
     pub async fn streaming_search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -328,7 +472,44 @@ impl LdapClient {
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
     /// This operatrion is useful when records has single value attributes.
     /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
-    ///
+    /// 
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `scope` - The scope of the search
+    /// * `filter` - The filter to search for the user
+    /// * `limit` - The maximum number of records to return
+    /// * `attributes` - The attributes to return from the search
+    /// 
+    /// # Returns
+    /// * `Result<T, Error>` - The result will be mapped to a struct of type T
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// 
+    /// #[derive(Debug, Deserialize)]
+    /// struct TestMultiValued {
+    ///    key1: Vec<String>,
+    ///    key2: Vec<String>,
+    /// }
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    /// let user = ldap.streaming_search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
+    /// 
+    /// ```
     pub async fn streaming_search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         base: &str,
@@ -355,8 +536,42 @@ impl LdapClient {
     }
 
     ///
-    /// base = "ou=people,dc=example,dc=com"
-    ///
+    /// Create a new record in the LDAP server. The record will be created in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `uid` - The uid of the record
+    /// * `base` - The base DN to create the record
+    /// * `data` - The attributes of the record
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if the record creation fails
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let data = vec![
+    ///     ( "objectClass",HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),),
+    ///     ("uid",HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),),
+    ///     ("cn", HashSet::from(["Kasun"])),
+    ///     ("sn", HashSet::from(["Ranasingh"])),
+    /// ];
+    /// 
+    /// let result = ldap.create("bd9b91ec-7a69-4166-bf67-cc7e553b2fd9", "ou=people,dc=example,dc=com", data).await;
+    /// 
+    /// ```
+    /// 
     pub async fn create(
         &mut self,
         uid: &str,
@@ -378,6 +593,41 @@ impl LdapClient {
         Ok(())
     }
 
+    ///
+    /// Update a record in the LDAP server. The record will be updated in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `uid` - The uid of the record
+    /// * `base` - The base DN to update the record
+    /// * `data` - The attributes of the record
+    /// * `new_uid` - The new uid of the record. If the new uid is provided, the uid of the record will be updated.
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if the record update fails
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let data = vec![
+    ///     Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
+    ///     Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
+    /// ];
+    /// 
+    /// let result = ldap.update("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com", data, Option::None).await;
+    /// 
+    /// ```
     pub async fn update(
         &mut self,
         uid: &str,
@@ -450,6 +700,34 @@ impl LdapClient {
         Ok(())
     }
 
+    ///
+    /// Delete a record in the LDAP server. The record will be deleted in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `uid` - The uid of the record
+    /// * `base` - The base DN to delete the record
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if the record delete fails
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let result = ldap.delete("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com").await;
+    /// 
+    /// ```
     pub async fn delete(&mut self, uid: &str, base: &str) -> Result<(), Error> {
         let dn = format!("uid={},{}", uid, base);
         let delete = self.ldap.delete(dn.as_str()).await;
@@ -484,15 +762,28 @@ impl LdapClient {
     }
 }
 
+
+///
+/// The error type for the LDAP client
+/// 
 #[derive(Debug)]
 pub enum Error {
+    ///
+    /// Error occured when performing a LDAP query
     Query(String, LdapError),
+    /// No records found for the search criteria
     NotFound(String),
+    /// Multiple records found for the search criteria
     MultipleResults(String),
+    /// Authentication failed
     AuthenticationFailed(String),
+    /// Error occured when creating a record
     Create(String, LdapError),
+    /// Error occured when updating a record
     Update(String, LdapError),
+    /// Error occured when deleting a record
     Delete(String, LdapError),
+    /// Error occured when mapping the search result to a struct
     Mapping(String),
 }
 
