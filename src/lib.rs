@@ -4,11 +4,33 @@
 //!
 //! # Documentation
 //! * [Examples Repository](https://github.com/keaz/simple-ldap)
+//! 
+//! # Usage
+//! Add this to your `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! simple-ldap = "1.3.0"
+//! 
+//! ```
+//! 
+//! ## Features
+//! * [x] Authentication
+//! * [x] Search
+//! * [x] Create
+//! * [x] Update
+//! * [x] Delete
+//! * [x] Streaming Search
+//! * [x] Streaming Search Multi Valued
+//! * [x] Create Group
+//! * [x] Add Users to Group
+//! * [ ] Delete Group
+//! * [ ] Remove Users from Group
+//! * [*] Get Group Members
 //!
 use std::collections::{HashMap, HashSet};
 
 use deadpool::managed::Object;
-use filter::Filter;
+use filter::{Filter, EqFilter};
 use ldap3::{
     log::{debug, error},
     Ldap, LdapError, Mod, Scope, SearchEntry, StreamState,
@@ -148,7 +170,7 @@ impl LdapClient {
         base: &str,
         scope: Scope,
         filter: &dyn Filter,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<SearchEntry, Error> {
         let search = self
             .ldap
@@ -234,7 +256,7 @@ impl LdapClient {
         base: &str,
         scope: Scope,
         filter: &dyn Filter,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
 
@@ -289,7 +311,7 @@ impl LdapClient {
         base: &str,
         scope: Scope,
         filter: &dyn Filter,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
         let json = LdapClient::create_json_multi_value(search_entry)?;
@@ -349,7 +371,7 @@ impl LdapClient {
         scope: Scope,
         filter: &dyn Filter,
         limit: i32,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<Vec<SearchEntry>, Error> {
         let search_stream = self
             .ldap
@@ -444,7 +466,7 @@ impl LdapClient {
         scope: Scope,
         filter: &dyn Filter,
         limit: i32,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<Vec<T>, Error> {
         let entries = self
             .streaming_search_inner(base, scope, filter, limit, attributes)
@@ -515,7 +537,7 @@ impl LdapClient {
         scope: Scope,
         filter: &dyn Filter,
         limit: i32,
-        attributes: Vec<&str>,
+        attributes: &Vec<&str>,
     ) -> Result<Vec<T>, Error> {
         let entries = self
             .streaming_search_inner(base, scope, filter, limit, attributes)
@@ -765,6 +787,238 @@ impl LdapClient {
         debug!("Sucessfully deleted record result: {:?}", uid);
         Ok(())
     }
+
+    ///
+    /// Create a new group in the LDAP server. The group will be created in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `group_name` - The name of the group
+    /// * `group_ou` - The ou of the group
+    /// * `description` - The description of the group
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if the group creation fails
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
+    /// 
+    /// ```
+    pub async fn create_group(
+        &mut self,
+        group_name: &str,
+        group_ou: &str,
+        description: &str,
+    ) -> Result<(), Error> {
+        let dn = format!("cn={},{}", group_name, group_ou);
+
+        let data = vec![("objectClass", HashSet::from(["top", "groupOfNames"])),
+        ("cn", HashSet::from([group_name])),
+        ("ou", HashSet::from([group_ou])),
+        ("description", HashSet::from([description]))];
+        let save = self.ldap.add(dn.as_str(), data).await;
+        if let Err(err) = save {
+            return Err(Error::Create(
+                format!("Error saving record: {:?}", err),
+                err,
+            ));
+        }
+        let save = save.unwrap().success();
+
+        if let Err(err) = save {
+            return Err(Error::Create(
+                format!("Error creating group: {:?}", err),
+                err,
+            ));
+        }
+        let res = save.unwrap();
+        debug!("Sucessfully created group result: {:?}", res);
+        Ok(())
+    } 
+
+
+    ///
+    /// Add users to a group in the LDAP server. The group will be updated in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `users` - The list of users to add to the group
+    /// * `group_dn` - The dn of the group
+    /// 
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if failed to add users to the group
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let result = ldap.add_users_to_group(vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"],
+    ///  "cn=test_group,ou=groups,dc=example,dc=com").await;
+    /// 
+    /// ```
+    pub async fn add_users_to_group(&mut self, users: Vec<&str>,group_dn: &str) -> Result<(), Error> {
+        let mut mods = Vec::new();
+        let users = users.iter().map(|user| *user).collect::<HashSet<&str>>();
+        mods.push(Mod::Replace("member", users));
+        let res = self.ldap.modify(group_dn, mods).await;
+        if let Err(err) = res {
+            return Err(Error::Update(
+                format!("Error updating record: {:?}", err),
+                err,
+            ));
+        }
+
+        let res = res.unwrap().success();
+        if let Err(err) = res {
+            match err {
+                LdapError::LdapResult { result } => {
+                    if result.rc == NO_SUCH_RECORD {
+                        return Err(Error::NotFound(format!(
+                            "No records found for the uid: {:?}",
+                            group_dn
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(Error::Update(
+                        format!("Error updating record: {:?}", err),
+                        err,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    ///
+    /// Get users of a group in the LDAP server. The group will be searched in the provided base DN.
+    /// 
+    /// # Arguments
+    /// * `group_dn` - The dn of the group
+    /// * `base_dn` - The base dn to search for the users
+    /// * `scope` - The scope of the search
+    /// * `attributes` - The attributes to return from the search
+    /// 
+    /// # Returns
+    /// * `Result<Vec<T>, Error>` - Returns a vector of structs of type T
+    /// 
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// 
+    /// #[derive(Debug, Deserialize)]
+    /// struct User {
+    ///     uid: String,
+    ///     cn: String,
+    ///     sn: String,
+    /// }
+    /// 
+    /// let ldap_config = LdapConfig {
+    ///     bind_dn: "cn=manager".to_string(),
+    ///     bind_pw: "password".to_string(),
+    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///     pool_size: 10,
+    /// };
+    /// 
+    /// let pool = pool::build_connection_pool(&ldap_config).await;
+    /// let mut ldap = pool.get_connection().await;
+    /// 
+    /// let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com", "ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, vec!["cn", "sn", "uid"]).await;
+    ///  
+    /// ```
+    pub async fn get_members<T: for<'a> serde::Deserialize<'a>>(&mut self, group_dn: &str,base_dn: &str, scope: Scope, attributes: &Vec<&str>) -> 
+    Result<Vec<T>, Error> {
+        let search = self
+            .ldap
+            .search(
+                group_dn,
+                Scope::Base,
+                "(objectClass=groupOfNames)",
+                vec!["member"],
+            )
+            .await;
+        
+        if let Err(error) = search {
+            return Err(Error::Query(
+                format!("Error searching for record: {:?}", error),
+                error,
+            ));
+        }
+        let result = search.unwrap().success();
+        if let Err(error) = result {
+            return Err(Error::Query(
+                format!("Error searching for record: {:?}", error),
+                error,
+            ));
+        }
+
+        let records = result.unwrap().0;
+
+        if records.len() > 1 {
+            return Err(Error::MultipleResults(format!(
+                "Found multiple records for the search criteria"
+            )));
+        }
+
+        if records.len() == 0 {
+            return Err(Error::NotFound(format!(
+                "No records found for the search criteria"
+            )));
+        }
+
+        let record = records.get(0).unwrap();
+
+        let x = SearchEntry::construct(record.to_owned());
+        let result: HashMap<&str, Vec<String>> = x
+            .attrs
+            .iter()
+            .filter(|(_, value)| !value.is_empty())
+            .map(|(arrta, value)| (arrta.as_str(), value.to_owned()))
+            .collect();
+
+        let mut members = Vec::new();
+        for member in result.get("member").unwrap() {
+            let uid = member.split(",").collect::<Vec<&str>>()[0].split("=").collect::<Vec<&str>>();
+            let filter = EqFilter::from(uid[0].to_string(), uid[1].to_string());
+            let x = self.search::<T>(base_dn, scope, &filter, attributes).await;
+            match x {
+                Ok(x) => {
+                    members.push(x);
+                },
+                Err(err) => {
+                    error!("Error getting member {:?} error {:?}", member, err);
+                }
+            }
+        }
+
+        Ok(members)
+        
+    }
+
 }
 
 ///
@@ -908,7 +1162,7 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(user.is_ok());
@@ -934,7 +1188,7 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(user.is_err());
@@ -962,7 +1216,7 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(user.is_err());
@@ -1066,7 +1320,7 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(user.is_ok());
@@ -1094,7 +1348,7 @@ mod tests {
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
                 2,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(result.is_ok());
@@ -1121,7 +1375,7 @@ mod tests {
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
                 2,
-                vec!["cn", "sn", "uid"],
+                &vec!["cn", "sn", "uid"],
             )
             .await;
         assert!(result.is_ok());
@@ -1174,6 +1428,94 @@ mod tests {
             Error::NotFound(_) => assert!(true),
             _ => assert!(false),
         }
+    }
+
+    #[tokio::test]
+    async fn test_create_group(){
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
+            pool_size: 1,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .create_group("test_group", "dc=example,dc=com","Some Description")
+            .await;
+        
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_users_to_group(){
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
+            pool_size: 1,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+
+        let _result = pool
+            .get_connection()
+            .await
+            .create_group("test_group_1", "dc=example,dc=com","Some Decription")
+            .await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .add_users_to_group(vec!["uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
+            "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com"],
+             "cn=test_group_1,dc=example,dc=com")
+            .await;
+        
+        // println!("{:?}", result.err().unwrap());
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_members(){
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            // ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 1,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+
+        let _result = pool
+            .get_connection()
+            .await
+            .create_group("test_group_2", "dc=example,dc=com","Some Decription 2")
+            .await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .add_users_to_group(vec!["uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
+            "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com"],
+             "cn=test_group_2,dc=example,dc=com")
+            .await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .get_members::<User>("cn=test_group_2,dc=example,dc=com","dc=example,dc=com", Scope::Subtree, &vec!["cn", "sn", "uid"])
+            .await;
+        
+        assert!(result.is_ok());
+        let restult = result.unwrap();
+        assert_eq!(restult.len(), 2);
+        assert_eq!(restult[0].uid, "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5");
+        assert_eq!(restult[1].uid, "e219fbc0-6df5-4bc3-a6ee-986843bb157e");
     }
 
     #[derive(Deserialize)]
