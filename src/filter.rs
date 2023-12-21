@@ -4,7 +4,7 @@
 ///
 
 /// The `Filter` trait is implemented by all the filters.
-pub trait Filter {
+pub trait Filter: Send {
     fn filter(&self) -> String;
 }
 
