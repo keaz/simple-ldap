@@ -25,7 +25,7 @@
 //! * [x] Add Users to Group
 //! * [ ] Delete Group
 //! * [ ] Remove Users from Group
-//! * [*] Get Group Members
+//! * [x] Get Group Members
 //!
 use std::collections::{HashMap, HashSet};
 
@@ -169,7 +169,7 @@ impl LdapClient {
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &(impl Filter+?Sized),
+        filter: &(impl Filter + ?Sized),
         attributes: &Vec<&str>,
     ) -> Result<SearchEntry, Error> {
         let search = self
@@ -193,14 +193,14 @@ impl LdapClient {
         let records = result.unwrap().0;
 
         if records.len() > 1 {
-            return Err(Error::MultipleResults(format!(
-                "Found multiple records for the search criteria"
+            return Err(Error::MultipleResults(String::from(
+                "Found multiple records for the search criteria",
             )));
         }
 
-        if records.len() == 0 {
-            return Err(Error::NotFound(format!(
-                "No records found for the search criteria"
+        if records.is_empty() {
+            return Err(Error::NotFound(String::from(
+                "No records found for the search criteria",
             )));
         }
 
@@ -989,14 +989,14 @@ impl LdapClient {
         let records = result.unwrap().0;
 
         if records.len() > 1 {
-            return Err(Error::MultipleResults(format!(
-                "Found multiple records for the search criteria"
+            return Err(Error::MultipleResults(String::from(
+                "Found multiple records for the search criteria",
             )));
         }
 
-        if records.len() == 0 {
-            return Err(Error::NotFound(format!(
-                "No records found for the search criteria"
+        if records.is_empty() {
+            return Err(Error::NotFound(String::from(
+                "No records found for the search criteria",
             )));
         }
 
@@ -1012,8 +1012,8 @@ impl LdapClient {
 
         let mut members = Vec::new();
         for member in result.get("member").unwrap() {
-            let uid = member.split(",").collect::<Vec<&str>>()[0]
-                .split("=")
+            let uid = member.split(',').collect::<Vec<&str>>()[0]
+                .split('=')
                 .collect::<Vec<&str>>();
             let filter = EqFilter::from(uid[0].to_string(), uid[1].to_string());
             let x = self.search::<T>(base_dn, scope, &filter, attributes).await;

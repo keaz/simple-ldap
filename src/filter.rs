@@ -9,6 +9,7 @@ pub trait Filter: Send {
 }
 
 /// The `AndFilter` struct represents an AND filter.
+#[derive(Default)]
 pub struct AndFilter {
     filters: Vec<Box<dyn Filter>>,
 }
@@ -23,6 +24,10 @@ impl AndFilter {
     ///
     /// let filter = AndFilter::new();
     /// ```
+    #[deprecated(
+        since = "1.3.2",
+        note = "Please use the `Default` trait instead of this method."
+    )]
     pub fn new() -> Self {
         AndFilter {
             filters: Vec::new(),
@@ -59,6 +64,7 @@ impl Filter for AndFilter {
 }
 
 /// The `OrFilter` struct represents an OR filter.
+#[derive(Default)]
 pub struct OrFilter {
     filters: Vec<Box<dyn Filter>>,
 }
@@ -73,6 +79,10 @@ impl OrFilter {
     ///
     /// let filter = OrFilter::new();
     /// ```
+    #[deprecated(
+        since = "1.3.2",
+        note = "Please use the `Default` trait instead of this method."
+    )]
     pub fn new() -> Self {
         OrFilter {
             filters: Vec::new(),
@@ -287,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_or_filter() {
-        let mut or_filter = OrFilter::new();
+        let mut or_filter = OrFilter::default();
         or_filter.add(Box::new(EqFilter {
             attribute: "cn".to_string(),
             value: "test".to_string(),
@@ -301,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_and_filter() {
-        let mut and_filter = AndFilter::new();
+        let mut and_filter = AndFilter::default();
         and_filter.add(Box::new(EqFilter {
             attribute: "cn".to_string(),
             value: "test".to_string(),
