@@ -23,8 +23,8 @@
 //! * [x] Streaming Search Multi Valued
 //! * [x] Create Group
 //! * [x] Add Users to Group
-//! * [ ] Delete Group
-//! * [ ] Remove Users from Group
+//! * [x] Delete Group
+//! * [x] Remove Users from Group
 //! * [x] Get Group Members
 //!
 use std::collections::{HashMap, HashSet};
@@ -93,18 +93,19 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
-    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///
-    /// let result = ldap.authenticate("", "Sam", "password", Box::new(name_filter)).await;
+    ///     let result = ldap.authenticate("", "Sam", "password", Box::new(name_filter)).await;
+    /// }
     /// ```
     pub async fn authenticate(
         &mut self,
@@ -230,25 +231,26 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    /// let user = ldap
-    /// .search::<User>(
-    ///    "ou=people,dc=example,dc=com",
-    ///    self::ldap3::Scope::OneLevel,
-    ///    &name_filter,
-    ///    vec!["cn", "sn", "uid"],
-    /// ).await;
-    ///
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    ///     let user = ldap
+    ///         .search::<User>(
+    ///         "ou=people,dc=example,dc=com",
+    ///         self::ldap3::Scope::OneLevel,
+    ///         &name_filter,
+    ///         vec!["cn", "sn", "uid"],
+    ///         ).await;
+    /// }
     /// ```
     ///
     pub async fn search<T: for<'a> serde::Deserialize<'a>>(
@@ -291,19 +293,20 @@ impl LdapClient {
     ///    key2: Vec<String>,
     /// }
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    /// let user = ldap.search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"]).await;
-    ///
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    ///     let user = ldap.search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"]).await;
+    /// }
     /// ```
     ///
     pub async fn search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
@@ -445,20 +448,20 @@ impl LdapClient {
     ///    key1: Vec<String>,
     ///    key2: Vec<String>,
     /// }
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
-    ///
-    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    /// let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
-    ///
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    ///     let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
+    /// }
     /// ```
     pub async fn streaming_search<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
@@ -517,19 +520,20 @@ impl LdapClient {
     ///    key2: Vec<String>,
     /// }
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
+    ///   
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
-    ///
-    /// let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    /// let user = ldap.streaming_search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
-    ///
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    ///     let user = ldap.streaming_search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
+    /// }
     /// ```
     pub async fn streaming_search_multi_valued<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
@@ -572,25 +576,26 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let data = vec![
-    ///     ( "objectClass",HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),),
-    ///     ("uid",HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),),
-    ///     ("cn", HashSet::from(["Kasun"])),
-    ///     ("sn", HashSet::from(["Ranasingh"])),
-    /// ];
+    ///     let data = vec![
+    ///         ( "objectClass",HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),),
+    ///         ("uid",HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),),
+    ///         ("cn", HashSet::from(["Kasun"])),
+    ///         ("sn", HashSet::from(["Ranasingh"])),
+    ///     ];
     ///
-    /// let result = ldap.create("bd9b91ec-7a69-4166-bf67-cc7e553b2fd9", "ou=people,dc=example,dc=com", data).await;
-    ///
+    ///     let result = ldap.create("bd9b91ec-7a69-4166-bf67-cc7e553b2fd9", "ou=people,dc=example,dc=com", data).await;
+    /// }
     /// ```
     ///
     pub async fn create(
@@ -637,23 +642,24 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let data = vec![
-    ///     Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
-    ///     Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
-    /// ];
+    ///     let data = vec![
+    ///         Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
+    ///         Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
+    ///     ];
     ///
-    /// let result = ldap.update("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com", data, Option::None).await;
-    ///
+    ///     let result = ldap.update("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com", data, Option::None).await;
+    /// }
     /// ```
     pub async fn update(
         &mut self,
@@ -742,18 +748,19 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let result = ldap.delete("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com").await;
-    ///
+    ///     let result = ldap.delete("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com").await;
+    /// }
     /// ```
     pub async fn delete(&mut self, uid: &str, base: &str) -> Result<(), Error> {
         let dn = format!("uid={},{}", uid, base);
@@ -804,18 +811,19 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
-    ///
+    ///     let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
+    /// }
     /// ```
     pub async fn create_group(
         &mut self,
@@ -866,19 +874,20 @@ impl LdapClient {
     /// use simple_ldap::LdapClient;
     /// use simple_ldap::pool::LdapConfig;
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let result = ldap.add_users_to_group(vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"],
-    ///  "cn=test_group,ou=groups,dc=example,dc=com").await;
-    ///
+    ///     let result = ldap.add_users_to_group(vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"],
+    ///     "cn=test_group,ou=groups,dc=example,dc=com").await;
+    /// }
     /// ```
     pub async fn add_users_to_group(
         &mut self,
@@ -942,18 +951,21 @@ impl LdapClient {
     ///     sn: String,
     /// }
     ///
-    /// let ldap_config = LdapConfig {
-    ///     bind_dn: "cn=manager".to_string(),
-    ///     bind_pw: "password".to_string(),
-    ///     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
-    ///     pool_size: 10,
-    /// };
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
     ///
-    /// let pool = pool::build_connection_pool(&ldap_config).await;
-    /// let mut ldap = pool.get_connection().await;
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
     ///
-    /// let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com", "ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, vec!["cn", "sn", "uid"]).await;
-    ///  
+    ///     let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com",
+    ///     "ou=people,dc=example,dc=com",
+    ///     self::ldap3::Scope::OneLevel, vec!["cn", "sn", "uid"]).await;
+    /// }
     /// ```
     pub async fn get_members<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
@@ -1029,6 +1041,75 @@ impl LdapClient {
 
         Ok(members)
     }
+
+    ///
+    /// Remove users from a group in the LDAP server. The group will be updated in the provided base DN.
+    /// This method will remove all the users provided from the group.
+    /// # Arguments
+    /// * `group_dn` - The dn of the group
+    /// * `users` - The list of users to remove from the group
+    ///
+    /// # Returns
+    /// * `Result<(), Error>` - Returns an error if failed to remove users from the group
+    ///
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    /// use std::collections::HashSet;
+    ///
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
+    ///
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
+    ///
+    ///     ldap.remove_users_from_group("cn=test_group,ou=groups,dc=example,dc=com",
+    ///     vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"]).await;
+    /// }
+    /// ```
+    pub async fn remove_users_from_group(
+        &mut self,
+        group_dn: &str,
+        users: Vec<&str>,
+    ) -> Result<(), Error> {
+        let mut mods = Vec::new();
+        let users = users.iter().map(|user| *user).collect::<HashSet<&str>>();
+        mods.push(Mod::Delete("member", users));
+        let res = self.ldap.modify(group_dn, mods).await;
+        if let Err(err) = res {
+            return Err(Error::Update(
+                format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                err,
+            ));
+        }
+
+        let res = res.unwrap().success();
+        if let Err(err) = res {
+            match err {
+                LdapError::LdapResult { result } => {
+                    if result.rc == NO_SUCH_RECORD {
+                        return Err(Error::NotFound(format!(
+                            "No records found for the uid: {:?}",
+                            group_dn
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(Error::Update(
+                        format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                        err,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 ///
@@ -1057,6 +1138,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
+
     use ldap3::tokio;
     use serde::Deserialize;
 
@@ -1205,7 +1287,7 @@ mod tests {
         let er = user.err().unwrap();
         match er {
             Error::NotFound(_) => assert!(true),
-            _ => assert!(false),
+            _ => panic!("Unexpected error"),
         }
     }
 
@@ -1233,7 +1315,7 @@ mod tests {
         let er = user.err().unwrap();
         match er {
             Error::MultipleResults(_) => assert!(true),
-            _ => assert!(false),
+            _ => panic!("Unexpected error"),
         }
     }
 
@@ -1489,7 +1571,6 @@ mod tests {
             )
             .await;
 
-        // println!("{:?}", result.err().unwrap());
         assert!(result.is_ok());
     }
 
@@ -1511,7 +1592,7 @@ mod tests {
             .create_group("test_group_2", "dc=example,dc=com", "Some Decription 2")
             .await;
 
-        let result = pool
+        let _result = pool
             .get_connection()
             .await
             .add_users_to_group(
@@ -1535,10 +1616,59 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        let restult = result.unwrap();
-        assert_eq!(restult.len(), 2);
-        assert_eq!(restult[0].uid, "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5");
-        assert_eq!(restult[1].uid, "e219fbc0-6df5-4bc3-a6ee-986843bb157e");
+        let users = result.unwrap();
+        assert_eq!(users.len(), 2);
+        let user_count = users
+            .iter()
+            .filter(|user| {
+                user.uid == "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5"
+                    || user.uid == "e219fbc0-6df5-4bc3-a6ee-986843bb157e"
+            })
+            .count();
+        assert_eq!(user_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_remove_users_from_group() {
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 1,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+
+        let _result = pool
+            .get_connection()
+            .await
+            .create_group("test_group_2", "dc=example,dc=com", "Some Decription 2")
+            .await;
+
+        let _result = pool
+            .get_connection()
+            .await
+            .add_users_to_group(
+                vec![
+                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
+                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+                ],
+                "cn=test_group_2,dc=example,dc=com",
+            )
+            .await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .remove_users_from_group(
+                "cn=test_group_2,dc=example,dc=com",
+                vec![
+                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
+                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+                ],
+            )
+            .await;
+        assert!(result.is_ok());
     }
 
     #[derive(Deserialize)]
