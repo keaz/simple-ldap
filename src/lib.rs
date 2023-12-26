@@ -9,7 +9,7 @@
 //! Add this to your `Cargo.toml`:
 //! ```toml
 //! [dependencies]
-//! simple-ldap = "1.3.0"
+//! simple-ldap = "1.4.1"
 //!
 //! ```
 //!
@@ -1589,7 +1589,7 @@ mod tests {
         let _result = pool
             .get_connection()
             .await
-            .create_group("test_group_2", "dc=example,dc=com", "Some Decription 2")
+            .create_group("test_group_3", "dc=example,dc=com", "Some Decription 2")
             .await;
 
         let _result = pool
@@ -1600,7 +1600,7 @@ mod tests {
                     "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
                     "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
                 ],
-                "cn=test_group_2,dc=example,dc=com",
+                "cn=test_group_3,dc=example,dc=com",
             )
             .await;
 
@@ -1608,7 +1608,7 @@ mod tests {
             .get_connection()
             .await
             .get_members::<User>(
-                "cn=test_group_2,dc=example,dc=com",
+                "cn=test_group_3,dc=example,dc=com",
                 "dc=example,dc=com",
                 Scope::Subtree,
                 &vec!["cn", "sn", "uid"],

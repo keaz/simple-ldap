@@ -20,5 +20,13 @@ log = "0.4.20"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 
+[features]
+default = ["ldap3/default"]
+tls = ["ldap3/tls"]
+tls-native = ["ldap3/tls-native"]
+tls-rustls = ["ldap3/tls-rustls"]
+gssapi = ["ldap3/gssapi"]
+sync = ["ldap3/sync"]
+
 [lib]
 doctest = false
