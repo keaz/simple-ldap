@@ -12,6 +12,11 @@
 //! simple-ldap = "1.4.1"
 //!
 //! ```
+//! ## Compile time features
+//! * `tls` - (Enabled by default) Enables TLS support (delegates to `ldap3`'s `tls` feature)
+//! * `tls-rustls` - Enables TLS support using `rustls` (delegates to `ldap3`'s `tls-rustls` feature)
+//! * `gsasl` - Enables SASL support (delegates to `ldap3`'s `gsasl` feature)
+//! * `sync` - (Enabled by default) Enables synchronous support (delegates to `ldap3`'s `sync` feature)
 //!
 //! ## Features
 //! * [x] Authentication
