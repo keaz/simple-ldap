@@ -35,7 +35,7 @@
 use std::collections::{HashMap, HashSet};
 
 use deadpool::managed::Object;
-use filter::{EqFilter, Filter};
+use filter::{AndFilter, EqFilter, Filter};
 use ldap3::{
     log::{debug, error},
     Ldap, LdapError, Mod, Scope, SearchEntry, StreamState,
@@ -141,13 +141,13 @@ impl LdapClient {
             )));
         }
 
-        let record = data.get(0).unwrap().to_owned();
+        let record = data.first().unwrap().to_owned();
         let record = SearchEntry::construct(record);
         let result: HashMap<&str, String> = record
             .attrs
             .iter()
             .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.get(0).unwrap().clone()))
+            .map(|(arrta, value)| (arrta.as_str(), value.first().unwrap().clone()))
             .collect();
 
         let entry_dn = result.get("entryDN").unwrap();
@@ -210,7 +210,7 @@ impl LdapClient {
             )));
         }
 
-        let record = records.get(0).unwrap();
+        let record = records.first().unwrap();
 
         Ok(SearchEntry::construct(record.to_owned()))
     }
@@ -343,7 +343,7 @@ impl LdapClient {
             .attrs
             .iter()
             .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.get(0).to_owned()))
+            .map(|(arrta, value)| (arrta.as_str(), value.first().to_owned()))
             .collect();
         let json = serde_json::to_string(&result);
         match json {
@@ -900,7 +900,7 @@ impl LdapClient {
         group_dn: &str,
     ) -> Result<(), Error> {
         let mut mods = Vec::new();
-        let users = users.iter().map(|user| *user).collect::<HashSet<&str>>();
+        let users = users.iter().copied().collect::<HashSet<&str>>();
         mods.push(Mod::Replace("member", users));
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
@@ -1017,7 +1017,7 @@ impl LdapClient {
             )));
         }
 
-        let record = records.get(0).unwrap();
+        let record = records.first().unwrap();
 
         let x = SearchEntry::construct(record.to_owned());
         let result: HashMap<&str, Vec<String>> = x
@@ -1084,7 +1084,7 @@ impl LdapClient {
         users: Vec<&str>,
     ) -> Result<(), Error> {
         let mut mods = Vec::new();
-        let users = users.iter().map(|user| *user).collect::<HashSet<&str>>();
+        let users = users.iter().copied().collect::<HashSet<&str>>();
         mods.push(Mod::Delete("member", users));
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
@@ -1114,6 +1114,86 @@ impl LdapClient {
             }
         }
         Ok(())
+    }
+
+    ///
+    /// Get the groups associated with a user in the LDAP server. The user will be searched in the provided base DN.
+    ///
+    /// # Arguments
+    /// * `group_ou` - The ou to search for the groups
+    /// * `user_dn` - The dn of the user
+    ///
+    /// # Returns
+    /// * `Result<Vec<String>, Error>` - Returns a vector of group names
+    ///
+    /// # Example
+    /// ```
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///     };
+    ///
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
+    ///
+    ///     let result = ldap.get_associtated_groups("ou=groups,dc=example,dc=com",
+    ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
+    /// }
+    /// ```
+    pub async fn get_associtated_groups(
+        &mut self,
+        group_ou: &str,
+        user_dn: &str,
+    ) -> Result<Vec<String>, Error> {
+        let group_filter = Box::new(EqFilter::from(
+            "objectClass".to_string(),
+            "groupOfNames".to_string(),
+        ));
+        
+        let user_filter = Box::new(EqFilter::from("member".to_string(), user_dn.to_string()));
+        let mut filter = AndFilter::default();
+        filter.add(group_filter);
+        filter.add(user_filter);
+
+        let search = self
+            .ldap
+            .search(group_ou, Scope::Subtree, filter.filter().as_str(), vec!["cn"])
+            .await;
+
+        if let Err(error) = search {
+            return Err(Error::Query(
+                format!("Error searching for record: {:?}", error),
+                error,
+            ));
+        }
+        let result = search.unwrap().success();
+        if let Err(error) = result {
+            return Err(Error::Query(
+                format!("Error searching for record: {:?}", error),
+                error,
+            ));
+        }
+
+        let records = result.unwrap().0;
+
+        if records.is_empty() {
+            return Err(Error::NotFound(String::from(
+                "User does not belong to any groups",
+            )));
+        }
+
+        let record = records.iter()
+            .map(|record| SearchEntry::construct(record.to_owned())).map(|se| se.attrs)
+            .flat_map(|att| att.get("cn").unwrap().iter().map(|x| x.to_owned()).collect::<Vec<String>>())
+            .collect::<Vec<String>>();
+        
+        Ok(record)
     }
 }
 
@@ -1674,6 +1754,30 @@ mod tests {
             )
             .await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_associated_groups() {
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 1,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+
+        let result = pool
+            .get_connection()
+            .await
+            .get_associtated_groups(
+                "ou=group,dc=example,dc=com",
+                "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(),2);
     }
 
     #[derive(Deserialize)]

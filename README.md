@@ -232,3 +232,46 @@ let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com
 
 Ok(ldap.unbind().await?)
 ```
+
+### Remove user from a group
+```rust
+use simple_ldap::LdapClient;
+use simple_ldap::pool::LdapConfig;
+
+let ldap_config = LdapConfig {
+    bind_dn: "cn=manager".to_string(),
+    bind_pw: "password".to_string(),
+    ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    pool_size: 10,
+};
+
+let pool = pool::build_connection_pool(&ldap_config).await;
+let mut ldap = pool.get_connection().await;
+let result = pool.get_connection().await.remove_users_from_group(
+                "cn=test_group_2,dc=example,dc=com",
+                vec![
+                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
+                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+                ],).await;
+
+Ok(ldap.unbind().await?)
+```
+
+### Get Associated Groups for a user
+```rust
+use simple_ldap::LdapClient;
+use simple_ldap::pool::LdapConfig;
+
+let ldap_config = LdapConfig {
+    bind_dn: "cn=manager".to_string(),
+    bind_pw: "password".to_string(),
+    ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    pool_size: 10,
+};
+
+let pool = pool::build_connection_pool(&ldap_config).await;
+let mut ldap = pool.get_connection().await;
+let result = ldap.get_associtated_groups("ou=group,dc=example,dc=com","uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",).await;
+
+Ok(ldap.unbind().await?)
+```
