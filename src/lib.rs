@@ -262,7 +262,7 @@ impl LdapClient {
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &dyn Filter,
+        filter: &impl Filter,
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
@@ -377,7 +377,7 @@ impl LdapClient {
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &dyn Filter,
+        filter: &(impl Filter + ?Sized),
         limit: i32,
         attributes: &Vec<&str>,
     ) -> Result<Vec<SearchEntry>, Error> {
@@ -472,7 +472,7 @@ impl LdapClient {
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &dyn Filter,
+        filter: &impl Filter,
         limit: i32,
         attributes: &Vec<&str>,
     ) -> Result<Vec<T>, Error> {
@@ -544,7 +544,7 @@ impl LdapClient {
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &dyn Filter,
+        filter: &impl Filter,
         limit: i32,
         attributes: &Vec<&str>,
     ) -> Result<Vec<T>, Error> {
