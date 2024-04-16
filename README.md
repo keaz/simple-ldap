@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.get_connection().await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
 
         let data = vec![
             (
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.get_connection().await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
         let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
         let user = ldap
             .search::<User>(
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.get_connection().await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
 
         let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
         let result = ldap
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.get_connection().await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
         let data = vec![
             Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
             Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
@@ -157,7 +157,7 @@ async fn main() -> Result<()> {
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.get_connection().await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
 
         let result = ldap
             .delete(
@@ -182,7 +182,7 @@ let ldap_config = LdapConfig {
 };
      
 let pool = pool::build_connection_pool(&ldap_config).await;
-let mut ldap = pool.get_connection().await;
+let mut ldap = pool.pool.get_connection().await.unwrap();
 let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
 
 Ok(ldap.unbind().await?)
@@ -201,7 +201,7 @@ let ldap_config = LdapConfig {
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
-let mut ldap = pool.get_connection().await;
+let mut ldap = pool.pool.get_connection().await.unwrap();
 let result = ldap.add_user_to_group("test_group", "ou=groups,dc=example,dc=com", "test_user").await;
 
 Ok(ldap.unbind().await?)
@@ -227,7 +227,7 @@ let ldap_config = LdapConfig {
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
-let mut ldap = pool.get_connection().await;
+let mut ldap = pool.pool.get_connection().await.unwrap();
 let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com", "ou=people,dc=example,dc=com", self::ldap3::Scope::OneLevel, vec!["cn", "sn", "uid"]).await;
 
 Ok(ldap.unbind().await?)
@@ -246,8 +246,8 @@ let ldap_config = LdapConfig {
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
-let mut ldap = pool.get_connection().await;
-let result = pool.get_connection().await.remove_users_from_group(
+let mut ldap = pool.pool.get_connection().await.unwrap();
+let result = pool.pool.get_connection().await.unwrap().remove_users_from_group(
                 "cn=test_group_2,dc=example,dc=com",
                 vec![
                     "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
@@ -270,7 +270,7 @@ let ldap_config = LdapConfig {
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
-let mut ldap = pool.get_connection().await;
+let mut ldap = pool.pool.get_connection().await.unwrap();
 let result = ldap.get_associtated_groups("ou=group,dc=example,dc=com","uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",).await;
 
 Ok(ldap.unbind().await?)
