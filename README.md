@@ -13,6 +13,35 @@ cargo add simple-ldap
 
 ## Examples
 
+### Authenticate a user
+
+```rust
+use simple-ldap::{LdapClient,Error,EqFilter};
+use simple-ldap::ldap3::Scope;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+            // By default, simple-ldap uses the "entryDN" attribute to get a record's distinguished name.
+            // In case the attribute containing the DN is named differently, you can use `dn_attribute` to
+            // provide the correct attribute.
+            dn_attribute: Some("distinguishedName"),
+        };
+
+    let pool = pool::build_connection_pool(&ldap_config).await;
+    let mut ldap = pool.pool.get_connection().await.unwrap();
+    let name_filter = EqFilter::from("cn".to_string(), "Ada".to_string());
+
+    ldap.authenticate("ou=users,dc=example,dc=org", "Ada", "password", Box::new(name_filter))
+        .await
+        .expect("Authentication unsuccessful");
+}
+```
+
 ### Create a new record
 ```rust
 use simple-ldap::{LdapClient,Error,EqFilter};
@@ -25,6 +54,7 @@ async fn main() -> Result<()> {
             bind_pw: "password".to_string(),
             ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
+            dn_attribute: None,
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
@@ -65,6 +95,7 @@ async fn main() -> Result<()> {
             bind_pw: "password".to_string(),
             ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
+            dn_attribute: None,
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
@@ -96,6 +127,7 @@ async fn main() -> Result<()> {
             bind_pw: "password".to_string(),
             ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
+            dn_attribute: None,
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
@@ -126,6 +158,7 @@ async fn main() -> Result<()> {
             bind_pw: "password".to_string(),
             ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
+            dn_attribute: None,
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
@@ -154,6 +187,7 @@ async fn main() -> Result<()> {
             bind_pw: "password".to_string(),
             ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
+            dn_attribute: None,
         };
         
     let pool = pool::build_connection_pool(&ldap_config).await;
@@ -179,6 +213,7 @@ let ldap_config = LdapConfig {
     bind_pw: "password".to_string(),
     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
     pool_size: 10,
+    dn_attribute: None,
 };
      
 let pool = pool::build_connection_pool(&ldap_config).await;
@@ -198,6 +233,7 @@ let ldap_config = LdapConfig {
     bind_pw: "password".to_string(),
     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
     pool_size: 10,
+    dn_attribute: None,
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
@@ -224,6 +260,7 @@ let ldap_config = LdapConfig {
     bind_pw: "password".to_string(),
     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
     pool_size: 10,
+    dn_attribute: None,
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
@@ -243,6 +280,7 @@ let ldap_config = LdapConfig {
     bind_pw: "password".to_string(),
     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
     pool_size: 10,
+    dn_attribute: None,
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
@@ -267,6 +305,7 @@ let ldap_config = LdapConfig {
     bind_pw: "password".to_string(),
     ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
     pool_size: 10,
+    dn_attribute: None,
 };
 
 let pool = pool::build_connection_pool(&ldap_config).await;
