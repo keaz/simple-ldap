@@ -4,7 +4,7 @@ use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
 use log::debug;
 use serde::Deserialize;
 
-use crate::LdapClient;
+use crate::{Error, LdapClient};
 
 pub struct Manager(String, LdapConnSettings);
 pub type Pool = deadpool::managed::Pool<Manager>;
@@ -66,15 +66,16 @@ pub struct LdapPool {
 }
 
 impl LdapPool {
-    pub async fn get_connection(&self) -> LdapClient {
-        let mut ldap = self.pool.get().await.unwrap();
+    /// Returns an existing LDAP connection from the pool or creates a new one if required.
+    pub async fn get_connection(&self) -> Result<LdapClient, Error> {
+        let mut ldap = self.pool.get().await.map_err(Error::Pool)?;
         ldap.simple_bind(self.config.bind_dn.as_str(), self.config.bind_pw.as_str())
             .await
-            .unwrap()
+            .map_err(|e| Error::Connection("unable to create connection".into(), e))?
             .success()
-            .unwrap();
+            .map_err(|e| Error::Connection("unable to create connection".into(), e))?;
 
-        LdapClient::from(ldap)
+        Ok(LdapClient::from(ldap))
     }
 }
 
