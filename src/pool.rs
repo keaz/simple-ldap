@@ -75,7 +75,7 @@ impl LdapPool {
             .success()
             .map_err(|e| Error::Connection("unable to create connection".into(), e))?;
 
-        Ok(LdapClient::from(ldap))
+        Ok(LdapClient::from(ldap, self.config.dn_attribute.clone()))
     }
 }
 
@@ -85,4 +85,5 @@ pub struct LdapConfig {
     pub bind_dn: String,
     pub bind_pw: String,
     pub pool_size: usize,
+    pub dn_attribute: Option<String>,
 }
