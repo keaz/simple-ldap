@@ -6,7 +6,7 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "1.6.0"
+version = "1.6.1"
 edition = "2021"
 
 
