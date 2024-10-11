@@ -32,10 +32,15 @@
 //! * [x] Remove Users from Group
 //! * [x] Get Group Members
 //!
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use deadpool::managed::{Object, PoolError};
 use filter::{AndFilter, EqFilter, Filter};
+use futures::FutureExt;
 use ldap3::{
     log::{debug, error},
     Ldap, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState,
@@ -383,7 +388,7 @@ impl LdapClient {
         base: &'a str,
         scope: Scope,
         filter: &'a (impl Filter + ?Sized),
-        limit: i32,
+        limit: usize,
         attributes: &'a Vec<&'a str>,
     ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
         let search_stream = self
@@ -450,7 +455,7 @@ impl LdapClient {
         base: &'a str,
         scope: Scope,
         filter: &'a impl Filter,
-        limit: i32,
+        limit: usize,
         attributes: &'a Vec<&'a str>,
     ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
         let entry = self
@@ -1116,8 +1121,8 @@ impl LdapClient {
 pub struct Stream<'a, S, A> {
     ldap: Object<Manager>,
     search_stream: SearchStream<'a, S, A>,
-    limit: i32,
-    count: i32,
+    limit: usize,
+    count: usize,
 }
 
 impl<'a, S, A> Stream<'a, S, A>
@@ -1128,7 +1133,7 @@ where
     fn new(
         ldap: Object<Manager>,
         search_stream: SearchStream<'a, S, A>,
-        limit: i32,
+        limit: usize,
     ) -> Stream<'a, S, A> {
         Stream {
             ldap,
@@ -1155,9 +1160,7 @@ where
         }
 
         if self.search_stream.state() != StreamState::Active {
-            let _res = self.search_stream.finish().await;
-            let msgid = self.search_stream.ldap_handle().last_id();
-            self.ldap.abandon(msgid).await.unwrap();
+            self.limit = self.count; // Set the limit to the count, to that poll_next will return None
             return Ok(StreamResult::Finished);
         }
 
@@ -1169,30 +1172,9 @@ where
                 return Ok(StreamResult::Record(entry));
             }
             None => {
-                let _res = self.search_stream.finish().await;
-                let msgid = self.search_stream.ldap_handle().last_id();
-                self.ldap.abandon(msgid).await.unwrap();
+                self.limit = self.count; // Set the limit to the count, to that poll_next will return None
                 return Ok(StreamResult::Finished);
             }
-        }
-    }
-
-    pub async fn next<T: for<'b> serde::Deserialize<'b>>(
-        &mut self,
-    ) -> Result<StreamResult<T>, Error> {
-        let entry = self.next_inner().await?;
-
-        match entry {
-            StreamResult::Record(entry) => {
-                let json = LdapClient::create_json_signle_value(entry).unwrap();
-                let data = LdapClient::map_to_struct::<T>(json);
-                if let Err(err) = data {
-                    return Err(Error::Mapping(format!("Error mapping record: {:?}", err)));
-                }
-                return Ok(StreamResult::Record(data.unwrap()));
-            }
-            StreamResult::Done => Ok(StreamResult::Done),
-            StreamResult::Finished => Ok(StreamResult::Finished),
         }
     }
 
@@ -1212,6 +1194,69 @@ where
             StreamResult::Done => Ok(StreamResult::Done),
             StreamResult::Finished => Ok(StreamResult::Finished),
         }
+    }
+}
+
+impl<'a, S, A> futures::stream::Stream for Stream<'a, S, A>
+where
+    S: AsRef<str> + Send + Sync + 'a,
+    A: AsRef<[S]> + Send + Sync + 'a,
+{
+    type Item = Result<Record, Error>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Record, Error>>> {
+        let poll = self.next_inner().boxed().as_mut().poll(cx);
+        match poll {
+            Poll::Ready(result) => match result {
+                Ok(result) => match result {
+                    StreamResult::Record(record) => Poll::Ready(Some(Ok(Record {
+                        search_entry: record,
+                    }))),
+                    StreamResult::Done => Poll::Ready(None),
+                    StreamResult::Finished => Poll::Ready(None),
+                },
+                Err(er) => {
+                    return Poll::Ready(Some(Err(er)));
+                }
+            },
+            Poll::Pending => {
+                if self.count == self.limit {
+                    return Poll::Ready(None);
+                }
+                // Ensure the task is woken when the next record is ready
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+}
+
+pub struct Record {
+    search_entry: SearchEntry,
+}
+
+impl Record {
+    pub fn to_record<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
+        let json = LdapClient::create_json_signle_value(self.search_entry).unwrap();
+        let data = LdapClient::map_to_struct::<T>(json);
+        if let Err(err) = data {
+            return Err(Error::Mapping(format!("Error mapping record: {:?}", err)));
+        }
+        return Ok(data.unwrap());
+    }
+
+    pub fn to_multi_valued_record_<T: for<'b> serde::Deserialize<'b>>(
+        self,
+    ) -> Result<StreamResult<T>, Error> {
+        let json = LdapClient::create_json_multi_value(self.search_entry).unwrap();
+        let data = LdapClient::map_to_struct::<T>(json);
+        if let Err(err) = data {
+            return Err(Error::Mapping(format!("Error mapping record: {:?}", err)));
+        }
+        return Ok(StreamResult::Record(data.unwrap()));
     }
 }
 
@@ -1251,6 +1296,7 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
 
+    use futures::StreamExt;
     use ldap3::tokio;
     use serde::Deserialize;
 
@@ -1568,12 +1614,13 @@ mod tests {
         assert!(result.is_ok());
         let mut result = result.unwrap();
         let mut count = 0;
-        loop {
-            match result.next::<User>().await {
-                Ok(StreamResult::Record(_)) => {
+        while let Some(record) = result.next().await {
+            match record {
+                Ok(record) => {
+                    let _ = record.to_record::<User>().unwrap();
                     count += 1;
                 }
-                _ => {
+                Err(_) => {
                     break;
                 }
             }
@@ -1608,12 +1655,14 @@ mod tests {
         assert!(result.is_ok());
         let mut result = result.unwrap();
         let mut count = 0;
-        loop {
-            match result.next::<User>().await {
-                Ok(StreamResult::Record(_)) => {
+
+        while let Some(record) = result.next().await {
+            match record {
+                Ok(record) => {
+                    let _ = record.to_record::<User>().unwrap();
                     count += 1;
                 }
-                _ => {
+                Err(_) => {
                     break;
                 }
             }
