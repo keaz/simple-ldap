@@ -33,17 +33,6 @@ ou: people
 uid: 42b05942-4f18-4279-827d-36534da1e437
 entryUUID: b34503f5-c572-302c-a135-4f78665f0032
 
-dn: uid=0dbaece8-f5f8-4e85-97d8-8bd614304bef,ou=people,dc=example,dc=com
-objectClass: top
-objectClass: inetorgperson
-objectClass: organizationalPerson
-objectClass: person
-sn: Gunn
-cn: James
-ou: people
-uid: 0dbaece8-f5f8-4e85-97d8-8bd614304bef
-entryUUID: cb0bafca-46aa-3db4-9c3c-abab3a273a70
-
 dn: uid=0xbaece8-f5f8-4e85-97d8-8bd614304bef,ou=people,dc=example,dc=com
 objectClass: top
 objectClass: inetorgperson

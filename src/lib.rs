@@ -40,8 +40,9 @@ use std::{
 
 use deadpool::managed::{Object, PoolError};
 use filter::{AndFilter, EqFilter, Filter};
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use ldap3::{
+    adapters::PagedResults,
     log::{debug, error},
     Ldap, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState,
 };
@@ -388,10 +389,9 @@ impl LdapClient {
         base: &'a str,
         scope: Scope,
         filter: &'a (impl Filter + ?Sized),
-        limit: usize,
         attributes: &'a Vec<&'a str>,
     ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
-        let search_stream = self
+        let search_stream: Result<SearchStream<'_, &str, &Vec<&str>>, LdapError> = self
             .ldap
             .streaming_search(base, scope, filter.filter().as_str(), attributes)
             .await;
@@ -404,23 +404,22 @@ impl LdapClient {
 
         let search_stream = search_stream.unwrap();
 
-        let stream = Stream::new(self.ldap, search_stream, limit);
+        let stream = Stream::new(self.ldap, search_stream);
         Ok(stream)
     }
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// Method will return a vector of structs of type T. return vector will be maximum of the limit provided.
+    /// Method will return a Stream. The stream can be used to iterate through the search results.
     ///
     /// # Arguments
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
-    /// * `limit` - The maximum number of records to return
     /// * `attributes` - The attributes to return from the search
     ///
     /// # Returns
-    /// * `Result<T, Error>` - The result will be mapped to a struct of type T
+    /// * `Result<Stream, Error>` - The result will be mapped to a Stream.
     ///
     /// # Example
     /// ```
@@ -447,7 +446,7 @@ impl LdapClient {
     ///     let mut ldap = pool.get_connection().await;
     ///
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter, 2, vec!["cn", "sn", "uid"]).await;
+    ///     let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter,vec!["cn", "sn", "uid"]).await;
     /// }
     /// ```
     pub async fn streaming_search<'a>(
@@ -455,14 +454,87 @@ impl LdapClient {
         base: &'a str,
         scope: Scope,
         filter: &'a impl Filter,
-        limit: usize,
         attributes: &'a Vec<&'a str>,
     ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
         let entry = self
-            .streaming_search_inner(base, scope, filter, limit, attributes)
+            .streaming_search_inner(base, scope, filter, attributes)
             .await?;
 
         Ok(entry)
+    }
+
+    ///
+    /// This method is used to search multiple records from the LDAP server and results will be pageinated.
+    /// Method will return a Stream. The stream can be used to iterate through the search results.
+    ///
+    /// # Arguments
+    /// * `base` - The base DN to search for the user
+    /// * `scope` - The scope of the search
+    /// * `filter` - The filter to search for the user
+    /// * `page_size` - The maximum number of records in a page
+    /// * `attributes` - The attributes to return from the search
+    ///
+    /// # Returns
+    /// * `Result<Stream, Error>` - A stream that can be used to iterate through the search results.
+    ///
+    /// # Example
+    /// ```
+    /// use simple_ldap::filter::EqFilter;
+    /// use simple_ldap::LdapClient;
+    /// use simple_ldap::pool::LdapConfig;
+    ///
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct TestMultiValued {
+    ///    key1: Vec<String>,
+    ///    key2: Vec<String>,
+    /// }
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: "cn=manager".to_string(),
+    ///         bind_pw: "password".to_string(),
+    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         pool_size: 10,
+    ///         dn_attribute: None
+    ///     };
+    ///
+    ///     let pool = pool::build_connection_pool(&ldap_config).await;
+    ///     let mut ldap = pool.get_connection().await;
+    ///
+    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+    ///     let user = ldap.streaming_search::<User>("", self::ldap3::Scope::OneLevel, &name_filter, 3, vec!["cn", "sn", "uid"]).await;
+    /// }
+    /// ```
+    pub async fn streaming_search_with<'a>(
+        mut self,
+        base: &'a str,
+        scope: Scope,
+        filter: &'a (impl Filter + ?Sized),
+        attributes: &'a Vec<&'a str>,
+        page_size: i32,
+    ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
+        let search_stream = self
+            .ldap
+            .streaming_search_with(
+                PagedResults::new(page_size),
+                base,
+                scope,
+                filter.filter().as_str(),
+                attributes,
+            )
+            .await;
+
+        if let Err(error) = search_stream {
+            return Err(Error::Query(
+                format!("Error searching for record: {:?}", error),
+                error,
+            ));
+        }
+
+        let search_stream = search_stream.unwrap();
+
+        let stream = Stream::new(self.ldap, search_stream);
+        Ok(stream)
     }
 
     ///
@@ -1121,8 +1193,7 @@ impl LdapClient {
 pub struct Stream<'a, S, A> {
     ldap: Object<Manager>,
     search_stream: SearchStream<'a, S, A>,
-    limit: usize,
-    count: usize,
+    cleanup_future: Option<BoxFuture<'a, ()>>,
 }
 
 impl<'a, S, A> Stream<'a, S, A>
@@ -1130,27 +1201,15 @@ where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
-    fn new(
-        ldap: Object<Manager>,
-        search_stream: SearchStream<'a, S, A>,
-        limit: usize,
-    ) -> Stream<'a, S, A> {
+    fn new(ldap: Object<Manager>, search_stream: SearchStream<'a, S, A>) -> Stream<'a, S, A> {
         Stream {
             ldap,
             search_stream,
-            limit,
-            count: 0,
+            cleanup_future: None,
         }
     }
 
     async fn next_inner(&mut self) -> Result<StreamResult<SearchEntry>, Error> {
-        if self.count == self.limit {
-            let _res = self.search_stream.finish().await;
-            let msgid = self.search_stream.ldap_handle().last_id();
-            self.ldap.abandon(msgid).await.unwrap();
-            return Ok(StreamResult::Done);
-        }
-
         let next = self.search_stream.next().await;
         if let Err(err) = next {
             return Err(Error::Query(
@@ -1160,19 +1219,19 @@ where
         }
 
         if self.search_stream.state() != StreamState::Active {
-            self.limit = self.count; // Set the limit to the count, to that poll_next will return None
+            // self.limit = self.count; // Set the limit to the count, to that poll_next will return None
             return Ok(StreamResult::Finished);
         }
 
         let entry = next.unwrap();
         match entry {
             Some(entry) => {
-                self.count += 1;
+                // self.count += 1;
                 let entry = SearchEntry::construct(entry);
                 return Ok(StreamResult::Record(entry));
             }
             None => {
-                self.limit = self.count; // Set the limit to the count, to that poll_next will return None
+                // self.limit = self.count; // Set the limit to the count, to that poll_next will return None
                 return Ok(StreamResult::Finished);
             }
         }
@@ -1194,6 +1253,13 @@ where
             StreamResult::Done => Ok(StreamResult::Done),
             StreamResult::Finished => Ok(StreamResult::Finished),
         }
+    }
+
+    pub async fn cleanup(&mut self) {
+        println!("Cleaning up");
+        let _res = self.search_stream.finish().await;
+        let msgid = self.search_stream.ldap_handle().last_id();
+        self.ldap.abandon(msgid).await.unwrap();
     }
 }
 
@@ -1223,11 +1289,10 @@ where
                 }
             },
             Poll::Pending => {
-                if self.count == self.limit {
-                    return Poll::Ready(None);
-                }
+                // if self.count == self.limit {
+                //     return Poll::Ready(None);
+                // }
                 // Ensure the task is woken when the next record is ready
-                cx.waker().wake_by_ref();
                 Poll::Pending
             }
         }
@@ -1296,6 +1361,7 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
 
+    use filter::{ContainsFilter, LikeFilter, WildardOn};
     use futures::StreamExt;
     use ldap3::tokio;
     use serde::Deserialize;
@@ -1607,8 +1673,48 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                2,
                 &attra,
+            )
+            .await;
+        assert!(result.is_ok());
+        let mut result = result.unwrap();
+        let mut count = 0;
+        while let Some(record) = result.next().await {
+            match record {
+                Ok(record) => {
+                    let user = record.to_record::<User>().unwrap();
+                    count += 1;
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+        assert!(count == 2);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_search_with() {
+        let ldap_config = LdapConfig {
+            bind_dn: "cn=manager".to_string(),
+            bind_pw: "password".to_string(),
+            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            pool_size: 10,
+            dn_attribute: None,
+        };
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+        let ldap = pool.get_connection().await.unwrap();
+
+        let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
+        let attra = vec!["cn", "sn", "uid"];
+        let result = ldap
+            .streaming_search_with(
+                "ou=people,dc=example,dc=com",
+                self::ldap3::Scope::OneLevel,
+                &name_filter,
+                &attra,
+                3,
             )
             .await;
         assert!(result.is_ok());
@@ -1625,7 +1731,7 @@ mod tests {
                 }
             }
         }
-        assert!(count == 2);
+        assert!(count == 3);
     }
 
     #[tokio::test]
@@ -1648,7 +1754,6 @@ mod tests {
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
-                2,
                 &attra,
             )
             .await;
