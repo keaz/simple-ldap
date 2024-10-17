@@ -129,23 +129,36 @@ async fn main() -> Result<()> {
             pool_size: 10,
             dn_attribute: None,
         };
-        
-    let pool = pool::build_connection_pool(&ldap_config).await;
-    let mut ldap = pool.pool.get_connection().await.unwrap();
+
+        let pool = pool::build_connection_pool(&ldap_config).await;
+        let ldap = pool.get_connection().await.unwrap();
 
         let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
+        let attra = vec!["cn", "sn", "uid"];
         let result = ldap
-            .streaming_search::<User>(
+            .streaming_search(
                 "ou=people,dc=example,dc=com",
                 self::ldap3::Scope::OneLevel,
                 &name_filter,
                 2,
-                vec!["cn", "sn", "uid"],
+                &attra,
             )
             .await;
         assert!(result.is_ok());
-        let result = result.unwrap();
-        assert!(result.len() == 2);
+        let mut result = result.unwrap();
+        let mut count = 0;
+        while let Some(record) = result.next().await {
+            match record {
+                Ok(record) => {
+                    let _ = record.to_record::<User>().unwrap();
+                    count += 1;
+                }
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+    assert!(count == 2);
     Ok(ldap.unbind().await?)
 }
 ```
