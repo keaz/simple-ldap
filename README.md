@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
             }
         }
     assert!(count == 2);
-    Ok(ldap.unbind().await?)
+    Ok(result.cleanup()?)
 }
 ```
 
