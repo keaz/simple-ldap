@@ -1,4 +1,4 @@
-name: CI/CD for Rust LDAP Client
+name: Publish to crates.io
 
 on:
   push:

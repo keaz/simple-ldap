@@ -109,7 +109,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -249,7 +249,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -312,7 +312,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -438,7 +438,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -507,7 +507,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -581,7 +581,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -648,7 +648,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -755,7 +755,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -819,7 +819,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -883,7 +883,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -961,7 +961,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -1069,7 +1069,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -1138,7 +1138,7 @@ impl LdapClient {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -1274,7 +1274,7 @@ where
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None
     ///     };
@@ -1379,7 +1379,7 @@ impl Record {
     ///     let ldap_config = LdapConfig {
     ///         bind_dn: "cn=manager".to_string(),
     ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
     ///         pool_size: 10,
     ///         dn_attribute: None,
     ///     };
@@ -1538,7 +1538,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1575,7 +1575,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1602,7 +1602,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1631,7 +1631,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1660,7 +1660,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1687,7 +1687,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1719,7 +1719,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1765,7 +1765,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1806,7 +1806,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1848,7 +1848,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1890,7 +1890,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1912,7 +1912,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
         };
@@ -1997,7 +1997,7 @@ mod tests {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
             // ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
         };
@@ -2054,7 +2054,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
         };
@@ -2101,7 +2101,7 @@ mod tests {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
             bind_pw: "password".to_string(),
-            ldap_url: "ldap://ldap_server:1389/dc=example,dc=com".to_string(),
+            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
         };
