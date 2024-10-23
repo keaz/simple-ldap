@@ -40,7 +40,7 @@ use std::{
 
 use deadpool::managed::{Object, PoolError};
 use filter::{AndFilter, EqFilter, Filter};
-use futures::{future::BoxFuture, FutureExt};
+use futures::FutureExt;
 use ldap3::{
     adapters::{Adapter, EntriesOnly, PagedResults},
     log::{debug, error},
@@ -1297,11 +1297,28 @@ where
     ///     stream.cleanup().await;
     /// }
     /// ```
-    pub async fn cleanup(&mut self) {
-        println!("Cleaning up");
+    pub async fn cleanup(&mut self) -> Result<(), Error> {
+        let state = self.search_stream.state();
+        if state == StreamState::Done || state == StreamState::Closed {
+            return Ok(());
+        }
         let _res = self.search_stream.finish().await;
         let msgid = self.search_stream.ldap_handle().last_id();
-        self.ldap.abandon(msgid).await.unwrap();
+        let result = self.ldap.abandon(msgid).await;
+
+        match result {
+            Ok(_) => {
+                debug!("Sucessfully abandoned search result: {:?}", msgid);
+                Ok(())
+            }
+            Err(err) => {
+                error!("Error abandoning search result: {:?}", err);
+                Err(Error::Abandon(
+                    format!("Error abandoning search result: {:?}", err),
+                    err,
+                ))
+            }
+        }
     }
 }
 
@@ -1444,6 +1461,8 @@ pub enum Error {
     Connection(String, LdapError),
     /// Error occurred while using the connection pool
     Pool(PoolError<LdapError>),
+    /// Error occurred while abandoning the search result
+    Abandon(String, LdapError),
 }
 
 #[cfg(test)]
@@ -1821,6 +1840,7 @@ mod tests {
             }
         }
         assert!(count == 3);
+        result.cleanup().await;
     }
 
     #[tokio::test]
@@ -1862,6 +1882,7 @@ mod tests {
             }
         }
         assert_eq!(count, 0);
+        result.cleanup().await;
     }
 
     #[tokio::test]

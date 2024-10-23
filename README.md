@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
             }
         }
     assert!(count == 2);
-    Ok(result.cleanup()?)
+    Ok(result.cleanup().await?)
 }
 ```
 
