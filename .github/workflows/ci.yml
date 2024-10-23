@@ -1,0 +1,56 @@
+name: CI/CD for Rust LDAP Client
+
+on:
+  push:
+    branches:
+      - '*'
+      - '!main'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      ldap:
+        image: openidentityplatform/opendj
+        ports:
+          - 1389:1389
+        options: > 
+          --env ROOT_USER_DN="cn=manager"
+
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get LDAP container ID
+        id: ldap_container_id
+        run: echo "LDAP_CONTAINER_ID=$(docker ps --filter 'ancestor=openidentityplatform/opendj:latest' -q)" >> $GITHUB_ENV
+
+      - name: Copy LDIF to LDAP container
+        run: docker cp ./data/data.ldif ${{ env.LDAP_CONTAINER_ID }}:/tmp/data.ldif
+
+      - name: Import LDIF into OpenDJ
+        run: |
+          docker exec ${{ job.services.ldap.id }} \
+          /opt/opendj/bin/ldapmodify -h localhost -p 1389 -D "cn=manager" -w password -a -f /tmp/data.ldif
+
+      # Step 3: Install Rust
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      # Step 4: Build the Rust project
+      - name: Build
+        run: cargo build --verbose
+
+      # Step 5: Run unit tests
+      - name: Run tests
+        run: cargo test --verbose
+
+

@@ -1,15 +1,8 @@
-dn: dc=example,dc=com
-objectClass: top
-objectClass: domain
-dc: example
-entryUUID: 724bddc1-a3d1-3d8d-b43c-ae7f3fa6954f
-
 dn: ou=people,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: people
 description: Users
-entryUUID: eb8f50dc-6283-3541-a1b3-d0ac3cae9e28
 
 dn: uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com
 objectClass: top
@@ -20,7 +13,6 @@ sn: Smith
 cn: Sam
 ou: people
 uid: f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5
-entryUUID: d03a2650-afae-3e43-8fe6-3df3b486a8f9
 
 dn: uid=42b05942-4f18-4279-827d-36534da1e437,ou=people,dc=example,dc=com
 objectClass: top
@@ -31,7 +23,6 @@ sn: Gunn
 cn: James
 ou: people
 uid: 42b05942-4f18-4279-827d-36534da1e437
-entryUUID: b34503f5-c572-302c-a135-4f78665f0032
 
 dn: uid=0xbaece8-f5f8-4e85-97d8-8bd614304bef,ou=people,dc=example,dc=com
 objectClass: top
@@ -42,7 +33,6 @@ sn: Gunn
 cn: James
 ou: people
 uid: 0xbaece8-f5f8-4e85-97d8-8bd614304bef
-entryUUID: 352b9f11-3394-3bf1-857b-9d4df00bb4a4
 
 dn: uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com
 objectClass: top
@@ -53,7 +43,6 @@ sn: Eliet
 cn: Jhone
 ou: people
 uid: e219fbc0-6df5-4bc3-a6ee-986843bb157e
-entryUUID: 158464c3-f19b-388d-856a-4bed06c24dcb
 
 dn: uid=cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b,ou=people,dc=example,dc=com
 objectClass: top
@@ -64,7 +53,6 @@ sn: Hanks
 cn: David
 ou: people
 uid: cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b
-entryUUID: 82b49fc0-c700-3b64-881a-7a9fb315ba85
 
 dn: uid=4d9b08fe-9a14-4df0-9831-ea9992837f0d,ou=people,dc=example,dc=com
 objectClass: top
@@ -75,32 +63,21 @@ sn: Hanks
 cn: David
 ou: people
 uid: 4d9b08fe-9a14-4df0-9831-ea9992837f0d
-entryUUID: 7036d8ba-8170-31d5-9f7f-38e11f63d13f
 
 dn: ou=group,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: group
 description: Groups
-createTimestamp: 20241011170327Z
-creatorsName: cn=Directory Manager,cn=Root DNs,cn=config
-entryUUID: 68d83ad5-29d5-4505-a58c-1ef19121683a
 
 dn: cn=grp1,ou=group,dc=example,dc=com
 objectClass: top
 objectClass: groupOfNames
 cn: grp1
 member: uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com
-createTimestamp: 20241011170342Z
-creatorsName: cn=Directory Manager,cn=Root DNs,cn=config
-entryUUID: 4618dc11-b54c-4db7-97f2-da09a33112e7
 
 dn: cn=grp2,ou=group,dc=example,dc=com
 objectClass: top
 objectClass: groupOfNames
 cn: grp2
 member: uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com
-createTimestamp: 20241011170356Z
-creatorsName: cn=Directory Manager,cn=Root DNs,cn=config
-entryUUID: 415d5386-3812-499c-a951-9a5945400ff8
-
