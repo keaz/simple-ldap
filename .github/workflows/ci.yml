@@ -1,4 +1,4 @@
-name: CI/CD for Rust LDAP Client
+name: CI for Rust LDAP Client
 
 on:
   push:
