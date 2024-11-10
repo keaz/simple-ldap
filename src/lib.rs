@@ -47,6 +47,7 @@ use ldap3::{
     Ldap, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState,
 };
 use pool::Manager;
+use thiserror::Error;
 
 pub mod filter;
 pub mod pool;
@@ -1439,36 +1440,47 @@ pub enum StreamResult<T> {
 ///
 /// The error type for the LDAP client
 ///
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     /// Error occured when performing a LDAP query
-    Query(String, LdapError),
+    #[error("{0}")]
+    Query(String, #[source] LdapError),
     /// No records found for the search criteria
+    #[error("{0}")]
     NotFound(String),
     /// Multiple records found for the search criteria
+    #[error("{0}")]
     MultipleResults(String),
     /// Authentication failed
+    #[error("{0}")]
     AuthenticationFailed(String),
     /// Error occured when creating a record
-    Create(String, LdapError),
+    #[error("{0}")]
+    Create(String, #[source] LdapError),
     /// Error occured when updating a record
-    Update(String, LdapError),
+    #[error("{0}")]
+    Update(String, #[source] LdapError),
     /// Error occured when deleting a record
-    Delete(String, LdapError),
+    #[error("{0}")]
+    Delete(String, #[source] LdapError),
     /// Error occured when mapping the search result to a struct
+    #[error("{0}")]
     Mapping(String),
     /// Error occurred while attempting to create a LDAP connection
-    Connection(String, LdapError),
+    #[error("{0}")]
+    Connection(String, #[source] LdapError),
     /// Error occurred while using the connection pool
-    Pool(PoolError<LdapError>),
+    #[error("{0}")]
+    Pool(#[source] PoolError<LdapError>),
     /// Error occurred while abandoning the search result
-    Abandon(String, LdapError),
+    #[error("{0}")]
+    Abandon(String, #[source] LdapError),
 }
 
 #[cfg(test)]
 mod tests {
 
-    use filter::{ContainsFilter, LikeFilter, WildardOn};
+    use filter::ContainsFilter;
     use futures::StreamExt;
     use ldap3::tokio;
     use serde::Deserialize;
@@ -1789,7 +1801,7 @@ mod tests {
         while let Some(record) = result.next().await {
             match record {
                 Ok(record) => {
-                    let user = record.to_record::<User>().unwrap();
+                    let _ = record.to_record::<User>().unwrap();
                     count += 1;
                 }
                 Err(_) => {
@@ -1797,7 +1809,7 @@ mod tests {
                 }
             }
         }
-        result.cleanup().await;
+        let _ = result.cleanup().await;
         assert!(count == 2);
     }
 
@@ -1840,7 +1852,7 @@ mod tests {
             }
         }
         assert!(count == 3);
-        result.cleanup().await;
+        let _ = result.cleanup().await;
     }
 
     #[tokio::test]
@@ -1882,7 +1894,7 @@ mod tests {
             }
         }
         assert_eq!(count, 0);
-        result.cleanup().await;
+        let _ = result.cleanup().await;
     }
 
     #[tokio::test]
