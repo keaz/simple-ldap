@@ -47,6 +47,7 @@ use ldap3::{
     Ldap, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState,
 };
 use pool::Manager;
+use serde::{de::value, Deserialize, Deserializer};
 use thiserror::Error;
 
 pub mod filter;
@@ -277,9 +278,7 @@ impl LdapClient {
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
-
-        let json = LdapClient::create_json_signle_value(search_entry)?;
-        LdapClient::map_to_struct(json)
+        to_signle_value(search_entry)
     }
 
     ///
@@ -334,55 +333,7 @@ impl LdapClient {
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
-        let json = LdapClient::create_json_multi_value(search_entry)?;
-
-        LdapClient::map_to_struct(json)
-    }
-
-    fn map_to_struct<T: for<'a> serde::Deserialize<'a>>(json: String) -> Result<T, Error> {
-        let result: Result<T, serde_json::Error> = serde_json::from_str(&json);
-        match result {
-            Ok(result) => Ok(result),
-            Err(error) => Err(Error::Mapping(format!(
-                "Error converting search result to object: {:?}",
-                error
-            ))),
-        }
-    }
-
-    fn create_json_signle_value(search_entry: SearchEntry) -> Result<String, Error> {
-        let result: HashMap<&str, Option<&String>> = search_entry
-            .attrs
-            .iter()
-            .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.first().to_owned()))
-            .collect();
-        let json = serde_json::to_string(&result);
-        match json {
-            Ok(json) => Ok(json),
-            Err(error) => Err(Error::Mapping(format!(
-                "Error converting search result to json: {:?}",
-                error
-            ))),
-        }
-    }
-
-    fn create_json_multi_value(search_entry: SearchEntry) -> Result<String, Error> {
-        let result: HashMap<&str, Vec<String>> = search_entry
-            .attrs
-            .iter()
-            .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.to_owned()))
-            .collect();
-
-        let json = serde_json::to_string(&result);
-        match json {
-            Ok(json) => Ok(json),
-            Err(error) => Err(Error::Mapping(format!(
-                "Error converting search result to json: {:?}",
-                error
-            ))),
-        }
+        to_multi_value(search_entry)
     }
 
     async fn streaming_search_inner<'a>(
@@ -1215,6 +1166,68 @@ impl LdapClient {
     }
 }
 
+fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
+    let result: HashMap<&str, serde_value::Value> = search_entry
+        .attrs
+        .iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(arrta, value)| (arrta.as_str(), map_to_single_value(value.first())))
+        .collect();
+
+    let value = serde_value::Value::Map(
+        result
+            .into_iter()
+            .map(|(k, v)| (serde_value::Value::String(k.to_string()), v))
+            .collect(),
+    );
+
+    Ok(T::deserialize(value).map_err(|err| {
+        Error::Mapping(format!(
+            "Error converting search result to object, {:?}",
+            err
+        ))
+    })?)
+}
+
+fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
+    let result: HashMap<&str, serde_value::Value> = search_entry
+        .attrs
+        .iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(arrta, value)| (arrta.as_str(), map_to_multi_value(value)))
+        .collect();
+
+    let value = serde_value::Value::Map(
+        result
+            .into_iter()
+            .map(|(k, v)| (serde_value::Value::String(k.to_string()), v))
+            .collect(),
+    );
+
+    Ok(T::deserialize(value).map_err(|err| {
+        Error::Mapping(format!(
+            "Error converting search result to object, {:?}",
+            err
+        ))
+    })?)
+}
+
+fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
+    match attra_value {
+        Some(value) => serde_value::Value::String(value.to_string()),
+        None => serde_value::Value::Option(Option::None),
+    }
+}
+
+fn map_to_multi_value(attra_value: &Vec<String>) -> serde_value::Value {
+    serde_value::Value::Seq(
+        attra_value
+            .iter()
+            .map(|value| serde_value::Value::String(value.to_string()))
+            .collect(),
+    )
+}
+
 /// The Stream struct is used to iterate through the search results.
 /// The stream will return a Record object. The Record object can be used to map the search result to a struct.
 /// After the stream is finished, the cleanup method should be called to cleanup the stream.
@@ -1411,23 +1424,11 @@ impl Record {
     ///     result.cleanup().await;
     /// }
     pub fn to_record<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
-        let json = LdapClient::create_json_signle_value(self.search_entry).unwrap();
-        let data = LdapClient::map_to_struct::<T>(json);
-        if let Err(err) = data {
-            return Err(Error::Mapping(format!("Error mapping record: {:?}", err)));
-        }
-        return Ok(data.unwrap());
+        to_signle_value(self.search_entry)
     }
 
-    pub fn to_multi_valued_record_<T: for<'b> serde::Deserialize<'b>>(
-        self,
-    ) -> Result<StreamResult<T>, Error> {
-        let json = LdapClient::create_json_multi_value(self.search_entry).unwrap();
-        let data = LdapClient::map_to_struct::<T>(json);
-        if let Err(err) = data {
-            return Err(Error::Mapping(format!("Error mapping record: {:?}", err)));
-        }
-        return Ok(StreamResult::Record(data.unwrap()));
+    pub fn to_multi_valued_record_<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
+        to_multi_value(self.search_entry)
     }
 }
 
@@ -1506,8 +1507,7 @@ mod tests {
             bin_attrs: HashMap::new(),
         };
 
-        let json = LdapClient::create_json_multi_value(entry).unwrap();
-        let test = LdapClient::map_to_struct::<TestMultiValued>(json);
+        let test = to_multi_value::<TestMultiValued>(entry);
         assert!(test.is_ok());
         let test = test.unwrap();
         assert_eq!(test.key1, vec!["value1".to_string(), "value2".to_string()]);
@@ -1519,18 +1519,20 @@ mod tests {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
         map.insert("key1".to_string(), vec!["value1".to_string()]);
         map.insert("key2".to_string(), vec!["value2".to_string()]);
+        map.insert("key4".to_string(), vec!["value4".to_string()]);
         let entry = SearchEntry {
             dn: "dn".to_string(),
             attrs: map,
             bin_attrs: HashMap::new(),
         };
 
-        let json = LdapClient::create_json_signle_value(entry).unwrap();
-        let test = LdapClient::map_to_struct::<TestSingleValued>(json);
+        let test = to_signle_value::<TestSingleValued>(entry);
         assert!(test.is_ok());
         let test = test.unwrap();
         assert_eq!(test.key1, "value1".to_string());
         assert_eq!(test.key2, "value2".to_string());
+        assert!(test.key3.is_none());
+        assert_eq!(test.key4.unwrap(), "value4".to_string());
     }
 
     #[derive(Debug, Deserialize)]
@@ -1543,6 +1545,8 @@ mod tests {
     struct TestSingleValued {
         key1: String,
         key2: String,
+        key3: Option<String>,
+        key4: Option<String>,
     }
 
     #[tokio::test]
