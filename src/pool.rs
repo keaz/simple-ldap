@@ -1,89 +1,76 @@
-use async_trait::async_trait;
-use deadpool::managed::{Metrics, RecycleResult};
-use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
-use log::debug;
-use serde::Deserialize;
+use std::num::NonZeroUsize;
+use deadpool::{managed::{self, Metrics, RecycleResult}, managed_reexports};
+use tracing::debug;
 
-use crate::{Error, LdapClient};
+use crate::{Error, LdapClient, LdapConfig};
 
-pub struct Manager(String, LdapConnSettings);
-pub type Pool = deadpool::managed::Pool<Manager>;
+// Export the pool types.
+managed_reexports!(
+    "simple_ldap",
+    Manager,
+    managed::Object<Manager>,
+    crate::Error,
+    // Config cannot fail
+    std::convert::Infallible
+);
+
+/// Manager for deadpool.
+pub struct Manager{
+    /// Configuration for creating connections.
+    config: LdapConfig
+}
 
 /// LDAP Manager for the `deadpool` managed connection pool.
 impl Manager {
-    /// Creates a new manager with the given URL.
-    /// URL can be anything that can go Into a String (e.g. String or &str)
-    pub fn new<S: Into<String>>(ldap_url: S) -> Self {
-        Self(ldap_url.into(), LdapConnSettings::new())
-    }
-
-    /// Set a custom LdapConnSettings object on the manager.
-    /// Returns a copy of the Manager.
-    pub fn with_connection_settings(mut self, settings: LdapConnSettings) -> Self {
-        self.1 = settings;
-        self
+    /// Creates a new manager.
+    pub fn new(config: LdapConfig) -> Self {
+        Self{
+            config
+        }
     }
 }
 
-#[async_trait]
 impl deadpool::managed::Manager for Manager {
-    type Type = Ldap;
-    type Error = ldap3::LdapError;
+    type Type = LdapClient;
+    type Error = crate::Error;
 
+    /// Creates an already bound connection.
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         debug!("Creating new connection");
-        let (conn, ldap) = LdapConnAsync::with_settings(self.1.clone(), &self.0).await?;
-        ldap3::drive!(conn);
-        Ok(ldap)
+        let ldap_client = LdapClient::new(self.config.clone()).await?;
+        Ok(ldap_client)
     }
 
     async fn recycle(
         &self,
-        conn: &mut Self::Type,
+        client: &mut Self::Type,
         _metrics: &Metrics,
     ) -> RecycleResult<Self::Error> {
         debug!("recycling connection");
-        conn.simple_bind("", "").await?;
+        client.unbind_ref().await?;
         Ok(())
     }
 }
 
-pub async fn build_connection_pool(ldap_config: &LdapConfig) -> LdapPool {
-    let manager = Manager::new(&ldap_config.ldap_url);
+/// Create a new connection pool.
+pub async fn build_connection_pool(ldap_config: LdapConfig, pool_size: NonZeroUsize) -> Result<Pool, String> {
+    let manager = Manager::new(ldap_config);
     let pool = Pool::builder(manager)
-        .max_size(ldap_config.pool_size)
+        .max_size(pool_size.get())
         .build()
-        .unwrap();
-    LdapPool {
-        pool,
-        config: ldap_config.clone(),
+        .map_err(|build_err| format!("Failed to build the pool: {build_err:?}"))?;
+
+    Ok(pool)
+}
+
+impl LdapClient {
+    /// End the LDAP connection.
+    ///
+    /// This unbind by reference is needed by deadpool.
+    async fn unbind_ref(&mut self) -> Result<(), Error> {
+        match self.ldap.unbind().await {
+            Ok(_) => Ok(()),
+            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error))
+        }
     }
-}
-
-pub struct LdapPool {
-    pool: Pool,
-    config: LdapConfig,
-}
-
-impl LdapPool {
-    /// Returns an existing LDAP connection from the pool or creates a new one if required.
-    pub async fn get_connection(&self) -> Result<LdapClient, Error> {
-        let mut ldap = self.pool.get().await.map_err(Error::Pool)?;
-        ldap.simple_bind(self.config.bind_dn.as_str(), self.config.bind_pw.as_str())
-            .await
-            .map_err(|e| Error::Connection("unable to create connection".into(), e))?
-            .success()
-            .map_err(|e| Error::Connection("unable to create connection".into(), e))?;
-
-        Ok(LdapClient::from(ldap, self.config.dn_attribute.clone()))
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct LdapConfig {
-    pub ldap_url: String,
-    pub bind_dn: String,
-    pub bind_pw: String,
-    pub pool_size: usize,
-    pub dn_attribute: Option<String>,
 }

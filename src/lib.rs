@@ -38,52 +38,105 @@ use std::{
     task::{Context, Poll},
 };
 
-use deadpool::managed::{Object, PoolError};
 use filter::{AndFilter, EqFilter, Filter};
 use futures::FutureExt;
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults},
-    log::{debug, error},
-    Ldap, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState,
+    adapters::{Adapter, EntriesOnly, PagedResults}, Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState
 };
-use pool::Manager;
-use serde::{de::value, Deserialize, Deserializer};
+use serde::Deserialize;
 use thiserror::Error;
+use tracing::{debug, error};
+use url::Url;
 
 pub mod filter;
+#[cfg(feature = "pool")]
 pub mod pool;
 pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
+
+
+/// Configuration and authentication for LDAP connection
+#[derive(Clone)]
+pub struct LdapConfig {
+    pub ldap_url: Url,
+    /// DistinguishedName, aka the "username" to use for the connection.
+    pub bind_dn: String,
+    pub bind_password: String,
+    pub dn_attribute: Option<String>,
+    /// Low level configuration for the connection.
+    /// You can probably skip it.
+    pub connection_settings: Option<LdapConnSettings>
+}
+
 ///
 /// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
-///
 pub struct LdapClient {
-    pub ldap: Object<Manager>,
+    /// The internal connection handle.
+    pub ldap: Ldap,
     pub dn_attr: Option<String>,
 }
 
 impl LdapClient {
     ///
-    /// Returns the ldap3 client
+    /// Creates a new asynchronous LDAP client.s
+    /// It's capable of running multiple operations concurrently.
     ///
-    pub fn get_inner(&self) -> Ldap {
-        self.ldap.clone()
+    /// # Bind
+    ///
+    /// This performs a bind on the connection so need to worry about that.
+    ///
+    /// However **you should unbind** the connection when you are done.
+    /// Though keep in mind that this will about all the operations you have initiated with this client
+    /// and it's clones, including open streams.
+    ///
+    pub async fn new(config: LdapConfig) -> Result<Self, Error> {
+
+        debug!("Creating new connection");
+
+        // With or without connection settings
+        let (conn, mut ldap) = match config.connection_settings {
+            None => LdapConnAsync::from_url(&config.ldap_url).await,
+            Some(settings) => LdapConnAsync::from_url_with_settings(settings, &config.ldap_url).await
+        }.map_err(|ldap_err|
+            Error::Connection(
+                String::from("Failed to initialize LDAP connection."),
+                ldap_err
+            )
+        )?;
+
+        ldap3::drive!(conn);
+
+        ldap.simple_bind(&config.bind_dn, &config.bind_password).await
+            .map_err(|ldap_err|Error::Connection(String::from("Bind failed"), ldap_err))?
+            .success()
+            .map_err(|ldap_err|Error::Connection(String::from("Bind failed"), ldap_err))?;
+
+        Ok(
+            Self {
+                dn_attr: config.dn_attribute,
+                ldap
+            }
+        )
     }
 }
 
 impl LdapClient {
-    fn from(ldap: Object<Manager>, dn_attr: Option<String>) -> Self {
-        LdapClient { ldap, dn_attr }
-    }
 
-    pub async fn unbind(&mut self) -> Result<(), String> {
+    /// End the LDAP connection.
+    ///
+    /// You should call this when you're done with the connection.
+    ///
+    /// Remember that this will close the connection for all clones of this client as well,
+    /// including open streams. So make sure that you're really good to close.
+    // Consuming self to prevent accidental use after unbind.
+    pub async fn unbind(mut self) -> Result<(), Error> {
         match self.ldap.unbind().await {
             Ok(_) => Ok(()),
-            Err(error) => Err(format!("Failed to unbind {:?}", error)),
+            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error))
         }
     }
 
@@ -356,7 +409,7 @@ impl LdapClient {
 
         let search_stream = search_stream.unwrap();
 
-        let stream = Stream::new(self.ldap, search_stream);
+        let stream = Stream::new(search_stream);
         Ok(stream)
     }
 
@@ -509,7 +562,7 @@ impl LdapClient {
 
         let search_stream = search_stream.unwrap();
 
-        let stream = Stream::new(self.ldap, search_stream);
+        let stream = Stream::new(search_stream);
         Ok(stream)
     }
 
@@ -1233,7 +1286,6 @@ fn map_to_multi_value(attra_value: &Vec<String>) -> serde_value::Value {
 /// After the stream is finished, the cleanup method should be called to cleanup the stream.
 ///
 pub struct Stream<'a, S, A> {
-    ldap: Object<Manager>,
     search_stream: SearchStream<'a, S, A>,
 }
 
@@ -1242,9 +1294,8 @@ where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
-    fn new(ldap: Object<Manager>, search_stream: SearchStream<'a, S, A>) -> Stream<'a, S, A> {
+    fn new(search_stream: SearchStream<'a, S, A>) -> Stream<'a, S, A> {
         Stream {
-            ldap,
             search_stream,
         }
     }
@@ -1318,7 +1369,7 @@ where
         }
         let _res = self.search_stream.finish().await;
         let msgid = self.search_stream.ldap_handle().last_id();
-        let result = self.ldap.abandon(msgid).await;
+        let result = self.search_stream.ldap_handle().abandon(msgid).await;
 
         match result {
             Ok(_) => {
@@ -1452,7 +1503,7 @@ pub enum Error {
     /// Multiple records found for the search criteria
     #[error("{0}")]
     MultipleResults(String),
-    /// Authentication failed
+    /// Authenticating a user failed.
     #[error("{0}")]
     AuthenticationFailed(String),
     /// Error occured when creating a record
@@ -1467,12 +1518,13 @@ pub enum Error {
     /// Error occured when mapping the search result to a struct
     #[error("{0}")]
     Mapping(String),
-    /// Error occurred while attempting to create a LDAP connection
+    /// Error occurred while attempting to create an LDAP connection
     #[error("{0}")]
     Connection(String, #[source] LdapError),
-    /// Error occurred while using the connection pool
+    /// Error occurred while attempting to close an LDAP connection.
+    /// Includes unbind issues.
     #[error("{0}")]
-    Pool(#[source] PoolError<LdapError>),
+    Close(String, #[source] LdapError),
     /// Error occurred while abandoning the search result
     #[error("{0}")]
     Abandon(String, #[source] LdapError),
@@ -1553,7 +1605,7 @@ mod tests {
     async fn test_create_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1590,7 +1642,7 @@ mod tests {
     async fn test_search_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1617,7 +1669,7 @@ mod tests {
     async fn test_search_no_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1646,7 +1698,7 @@ mod tests {
     async fn test_search_multiple_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1675,7 +1727,7 @@ mod tests {
     async fn test_update_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1702,7 +1754,7 @@ mod tests {
     async fn test_update_no_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1734,7 +1786,7 @@ mod tests {
     async fn test_update_uid_record() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1780,7 +1832,7 @@ mod tests {
     async fn test_streaming_search() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1821,7 +1873,7 @@ mod tests {
     async fn test_streaming_search_with() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1863,7 +1915,7 @@ mod tests {
     async fn test_streaming_search_no_records() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1905,7 +1957,7 @@ mod tests {
     async fn test_delete() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1927,7 +1979,7 @@ mod tests {
     async fn test_no_record_delete() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 10,
             dn_attribute: None,
@@ -1954,7 +2006,7 @@ mod tests {
     async fn test_create_group() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
@@ -1976,7 +2028,7 @@ mod tests {
     async fn test_add_users_to_group() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
@@ -2011,7 +2063,7 @@ mod tests {
     async fn test_get_members() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             // ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
@@ -2069,7 +2121,7 @@ mod tests {
     async fn test_remove_users_from_group() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
@@ -2116,7 +2168,7 @@ mod tests {
     async fn test_associated_groups() {
         let ldap_config = LdapConfig {
             bind_dn: "cn=manager".to_string(),
-            bind_pw: "password".to_string(),
+            bind_password: "password".to_string(),
             ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
             pool_size: 1,
             dn_attribute: None,
