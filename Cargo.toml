@@ -23,6 +23,10 @@ thiserror = "2.0.2"
 tracing = "0.1.41"
 url = "2.5.4"
 
+[dev-dependencies]
+anyhow = "1.0.95"
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+
 [features]
 default = ["ldap3/default"]
 tls = ["ldap3/tls"]
@@ -31,6 +35,3 @@ tls-rustls = ["ldap3/tls-rustls"]
 gssapi = ["ldap3/gssapi"]
 sync = ["ldap3/sync"]
 pool = ["dep:deadpool"]
-
-[lib]
-doctest = false

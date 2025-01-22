@@ -1,3 +1,12 @@
+///
+/// Module for LDAP connection pooling.
+///
+/// A single LDAP connection is able to handle multiple operations concurrently, but beyond a certain
+/// point it will become a bottleneck. This is where pooling comes in.
+///
+/// The pool keeps multiple connections alive and gives them to you upon request (unless they're all in use.)
+///
+
 use std::num::NonZeroUsize;
 use deadpool::{managed::{self, Metrics, RecycleResult}, managed_reexports};
 use tracing::debug;

@@ -21,7 +21,7 @@ Make sure that your container runtime has read access to the files in `data` dir
 ### docker-compose
 
 ```commandline
-$ docker-compose --file docker-compose.yml up
+$ docker-compose --file docker-compose.yml --detach up
 $ cargo test
 $ docker-compose --file docker-compose.yml down
 ```
@@ -29,7 +29,10 @@ $ docker-compose --file docker-compose.yml down
 ### podman
 
 ```commandline
-$ podman-compose --file docker-compose.yml up
+$ podman-compose --file docker-compose.yml --detach up
 $ cargo test
 $ podman-compose --file docker-compose.yml down
 ```
+
+You can also drop the `--detach` option to see the LDAP server output,
+but in this case you will need to run the tests from another terminal.

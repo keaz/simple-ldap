@@ -1,24 +1,34 @@
 //! # simple-ldap
+//!
 //! This is a high-level LDAP client library created by wrapping the rust LDAP3 clinet.
 //! This provides high-level functions that helps to interact with LDAP.
 //!
+//!
 //! # Documentation
+//!
 //! * [Examples Repository](https://github.com/keaz/simple-ldap)
 //!
+//!
 //! # Usage
+//!
 //! Add this to your `Cargo.toml`:
 //! ```toml
 //! [dependencies]
-//! simple-ldap = "1.4.1"
+//! simple-ldap = "3.0.0"
 //!
 //! ```
+//!
 //! ## Compile time features
+//!
 //! * `tls` - (Enabled by default) Enables TLS support (delegates to `ldap3`'s `tls` feature)
 //! * `tls-rustls` - Enables TLS support using `rustls` (delegates to `ldap3`'s `tls-rustls` feature)
 //! * `gsasl` - Enables SASL support (delegates to `ldap3`'s `gsasl` feature)
 //! * `sync` - (Enabled by default) Enables synchronous support (delegates to `ldap3`'s `sync` feature)
+//! * `pool` - Enable connection pooling
+//!
 //!
 //! ## Features
+//!
 //! * [x] Authentication
 //! * [x] Search
 //! * [x] Create
@@ -32,6 +42,7 @@
 //! * [x] Remove Users from Group
 //! * [x] Get Group Members
 //!
+
 use std::{
     collections::{HashMap, HashSet},
     pin::Pin,
@@ -89,10 +100,6 @@ impl LdapClient {
     ///
     /// This performs a bind on the connection so need to worry about that.
     ///
-    /// However **you should unbind** the connection when you are done.
-    /// Though keep in mind that this will about all the operations you have initiated with this client
-    /// and it's clones, including open streams.
-    ///
     pub async fn new(config: LdapConfig) -> Result<Self, Error> {
 
         debug!("Creating new connection");
@@ -128,10 +135,14 @@ impl LdapClient {
 
     /// End the LDAP connection.
     ///
-    /// You should call this when you're done with the connection.
+    /// **Caution advised!**
     ///
-    /// Remember that this will close the connection for all clones of this client as well,
+    /// This will close the connection for all clones of this client as well,
     /// including open streams. So make sure that you're really good to close.
+    ///
+    /// Closing an LDAP connection with an unbind is *a curtesy.*
+    /// It's fine to skip it, and because of the async hurdless outlined above,
+    /// I would perhaps even recommend it.
     // Consuming self to prevent accidental use after unbind.
     pub async fn unbind(mut self) -> Result<(), Error> {
         match self.ldap.unbind().await {
@@ -1538,7 +1549,7 @@ mod tests {
     use ldap3::tokio;
     use serde::Deserialize;
 
-    use crate::{filter::EqFilter, pool::LdapConfig};
+    use crate::{filter::EqFilter, LdapConfig};
 
     use super::*;
 
@@ -1599,601 +1610,5 @@ mod tests {
         key2: String,
         key3: Option<String>,
         key4: Option<String>,
-    }
-
-    #[tokio::test]
-    async fn test_create_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let data = vec![
-            (
-                "objectClass",
-                HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
-            ),
-            (
-                "uid",
-                HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),
-            ),
-            ("cn", HashSet::from(["Kasun"])),
-            ("sn", HashSet::from(["Ranasingh"])),
-        ];
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .create(
-                "bd9b91ec-7a69-4166-bf67-cc7e553b2fd9",
-                "ou=people,dc=example,dc=com",
-                data,
-            )
-            .await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_search_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-        let user = ldap
-            .search::<User>(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &vec!["cn", "sn", "uid"],
-            )
-            .await;
-        assert!(user.is_ok());
-        let user = user.unwrap();
-        assert_eq!(user.cn, "Sam");
-        assert_eq!(user.sn, "Smith");
-    }
-
-    #[tokio::test]
-    async fn test_search_no_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let name_filter = EqFilter::from("cn".to_string(), "SamX".to_string());
-        let user = ldap
-            .search::<User>(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &vec!["cn", "sn", "uid"],
-            )
-            .await;
-        assert!(user.is_err());
-        let er = user.err().unwrap();
-        match er {
-            Error::NotFound(_) => assert!(true),
-            _ => panic!("Unexpected error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_search_multiple_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
-        let user = ldap
-            .search::<User>(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &vec!["cn", "sn", "uid"],
-            )
-            .await;
-        assert!(user.is_err());
-        let er = user.err().unwrap();
-        match er {
-            Error::MultipleResults(_) => assert!(true),
-            _ => panic!("Unexpected error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_update_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let data = vec![
-            Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
-            Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
-        ];
-        let result = ldap
-            .update(
-                "e219fbc0-6df5-4bc3-a6ee-986843bb157e",
-                "ou=people,dc=example,dc=com",
-                data,
-                Option::None,
-            )
-            .await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_update_no_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let data = vec![
-            Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
-            Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
-        ];
-        let result = ldap
-            .update(
-                "032a26b4-9f00-4a29-99c8-15d463a29290",
-                "ou=people,dc=example,dc=com",
-                data,
-                Option::None,
-            )
-            .await;
-        assert!(result.is_err());
-        let er = result.err().unwrap();
-        match er {
-            Error::NotFound(_) => assert!(true),
-            _ => assert!(false),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_update_uid_record() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-        let data = vec![
-            Mod::Replace("cn", HashSet::from(["David_Update"])),
-            Mod::Replace("sn", HashSet::from(["Hanks_Update"])),
-        ];
-        let result = ldap
-            .update(
-                "cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b",
-                "ou=people,dc=example,dc=com",
-                data,
-                Option::Some("6da70e51-7897-411f-9290-649ebfcb3269"),
-            )
-            .await;
-
-        assert!(result.is_ok());
-
-        let mut ldap = pool.get_connection().await.unwrap();
-        let name_filter = EqFilter::from(
-            "uid".to_string(),
-            "6da70e51-7897-411f-9290-649ebfcb3269".to_string(),
-        );
-        let user = ldap
-            .search::<User>(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &vec!["cn", "sn", "uid"],
-            )
-            .await;
-        assert!(user.is_ok());
-        let user = user.unwrap();
-        assert_eq!(user.cn, "David_Update");
-        assert_eq!(user.sn, "Hanks_Update");
-    }
-
-    #[tokio::test]
-    async fn test_streaming_search() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let ldap = pool.get_connection().await.unwrap();
-
-        let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
-        let attra = vec!["cn", "sn", "uid"];
-        let result = ldap
-            .streaming_search(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &attra,
-            )
-            .await;
-        assert!(result.is_ok());
-        let mut result = result.unwrap();
-        let mut count = 0;
-        while let Some(record) = result.next().await {
-            match record {
-                Ok(record) => {
-                    let _ = record.to_record::<User>().unwrap();
-                    count += 1;
-                }
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-        let _ = result.cleanup().await;
-        assert!(count == 2);
-    }
-
-    #[tokio::test]
-    async fn test_streaming_search_with() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let ldap = pool.get_connection().await.unwrap();
-
-        let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-        let attra = vec!["cn", "sn", "uid"];
-        let result = ldap
-            .streaming_search_with(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &attra,
-                3,
-            )
-            .await;
-        assert!(result.is_ok());
-        let mut result = result.unwrap();
-        let mut count = 0;
-        while let Some(record) = result.next().await {
-            match record {
-                Ok(record) => {
-                    let _ = record.to_record::<User>().unwrap();
-                    count += 1;
-                }
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-        assert!(count == 3);
-        let _ = result.cleanup().await;
-    }
-
-    #[tokio::test]
-    async fn test_streaming_search_no_records() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let ldap = pool.get_connection().await.unwrap();
-
-        let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
-        let attra = vec!["cn", "sn", "uid"];
-        let result = ldap
-            .streaming_search(
-                "ou=people,dc=example,dc=com",
-                self::ldap3::Scope::OneLevel,
-                &name_filter,
-                &attra,
-            )
-            .await;
-        assert!(result.is_ok());
-        let mut result = result.unwrap();
-        let mut count = 0;
-
-        while let Some(record) = result.next().await {
-            match record {
-                Ok(record) => {
-                    let _ = record.to_record::<User>().unwrap();
-                    count += 1;
-                }
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-        assert_eq!(count, 0);
-        let _ = result.cleanup().await;
-    }
-
-    #[tokio::test]
-    async fn test_delete() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-
-        let result = ldap
-            .delete(
-                "4d9b08fe-9a14-4df0-9831-ea9992837f0d",
-                "ou=people,dc=example,dc=com",
-            )
-            .await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_no_record_delete() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 10,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-        let mut ldap = pool.get_connection().await.unwrap();
-
-        let result = ldap
-            .delete(
-                "4d9b08fe-9a14-4df0-9831-ea9992837f0x",
-                "ou=people,dc=example,dc=com",
-            )
-            .await;
-        assert!(result.is_err());
-        let er = result.err().unwrap();
-        match er {
-            Error::NotFound(_) => assert!(true),
-            _ => assert!(false),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_create_group() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 1,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .create_group("test_group", "dc=example,dc=com", "Some Description")
-            .await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_add_users_to_group() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 1,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let _result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .create_group("test_group_1", "dc=example,dc=com", "Some Decription")
-            .await;
-
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .add_users_to_group(
-                vec![
-                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-                ],
-                "cn=test_group_1,dc=example,dc=com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_get_members() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            // ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 1,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let _result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .create_group("test_group_3", "dc=example,dc=com", "Some Decription 2")
-            .await;
-
-        let _result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .add_users_to_group(
-                vec![
-                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-                ],
-                "cn=test_group_3,dc=example,dc=com",
-            )
-            .await;
-
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .get_members::<User>(
-                "cn=test_group_3,dc=example,dc=com",
-                "dc=example,dc=com",
-                Scope::Subtree,
-                &vec!["cn", "sn", "uid"],
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let users = result.unwrap();
-        assert_eq!(users.len(), 2);
-        let user_count = users
-            .iter()
-            .filter(|user| {
-                user.uid == "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5"
-                    || user.uid == "e219fbc0-6df5-4bc3-a6ee-986843bb157e"
-            })
-            .count();
-        assert_eq!(user_count, 2);
-    }
-
-    #[tokio::test]
-    async fn test_remove_users_from_group() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 1,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let _result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .create_group("test_group_2", "dc=example,dc=com", "Some Decription 2")
-            .await;
-
-        let _result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .add_users_to_group(
-                vec![
-                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-                ],
-                "cn=test_group_2,dc=example,dc=com",
-            )
-            .await;
-
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .remove_users_from_group(
-                "cn=test_group_2,dc=example,dc=com",
-                vec![
-                    "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                    "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-                ],
-            )
-            .await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_associated_groups() {
-        let ldap_config = LdapConfig {
-            bind_dn: "cn=manager".to_string(),
-            bind_password: "password".to_string(),
-            ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-            pool_size: 1,
-            dn_attribute: None,
-        };
-
-        let pool = pool::build_connection_pool(&ldap_config).await;
-
-        let result = pool
-            .get_connection()
-            .await
-            .unwrap()
-            .get_associtated_groups(
-                "ou=group,dc=example,dc=com",
-                "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 2);
-    }
-
-    #[derive(Deserialize)]
-    struct User {
-        pub uid: String,
-        pub cn: String,
-        pub sn: String,
     }
 }
