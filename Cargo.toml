@@ -25,7 +25,10 @@ url = "2.5.4"
 
 [dev-dependencies]
 anyhow = "1.0.95"
+rand = "0.8.5"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+# v4 is random uids.
+uuid = { version = "1.12.1", features = ["v4"] }
 
 [features]
 default = ["ldap3/default"]

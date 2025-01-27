@@ -3,19 +3,33 @@
 //! The functions in this file are basically test bodies, and cannot be run directly.
 //! They should be called from other testing modules.
 //! The point of this is to allow running the same test cases with and without pooling.
+//!
+//!
+//! # Idempotence
+//!
+//! Tests in this file should be **idenpotent.**
+//! I.e. running the test twice against the same LDAP server should yield identical test results.
+//!
+//! This is needed for the above mentioned runnig of same tests with and without pooling.
+//!
+//! It's enough to satisfy this requirement probabilistically e.g. by using random names
+//! that are unlikely to collide.
+
 
 use std::collections::HashSet;
 use futures::StreamExt;
+use rand::Rng;
 use serde::Deserialize;
 use simple_ldap::{
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
     Error, LdapClient
 };
+use uuid::Uuid;
 
 
 pub async fn test_create_record(mut client: LdapClient) -> anyhow::Result<()> {
-
+    let uid = random_uid();
     let data = vec![
         (
             "objectClass",
@@ -23,7 +37,7 @@ pub async fn test_create_record(mut client: LdapClient) -> anyhow::Result<()> {
         ),
         (
             "uid",
-            HashSet::from(["bd9b91ec-7a69-4166-bf67-cc7e553b2fd9"]),
+            HashSet::from([uid.as_str()]),
         ),
         ("cn", HashSet::from(["Kasun"])),
         ("sn", HashSet::from(["Ranasingh"])),
@@ -31,7 +45,7 @@ pub async fn test_create_record(mut client: LdapClient) -> anyhow::Result<()> {
 
     let _result = client
         .create(
-            "bd9b91ec-7a69-4166-bf67-cc7e553b2fd9",
+            uid.as_str(),
             "ou=people,dc=example,dc=com",
             data,
         )
@@ -152,34 +166,64 @@ pub async fn test_update_no_record(mut client: LdapClient) -> anyhow::Result<()>
 
 
 pub async fn test_update_uid_record(mut client: LdapClient) -> anyhow::Result<()> {
+    // First create a user to update.
+    // A create_user method would be nice.. 🤔
+    let original_uid = random_uid();
     let data = vec![
-        Mod::Replace("cn", HashSet::from(["David_Update"])),
-        Mod::Replace("sn", HashSet::from(["Hanks_Update"])),
+        (
+            "objectClass",
+            HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
+        ),
+        (
+            "uid",
+            HashSet::from([original_uid.as_str()]),
+        ),
+        ("cn", HashSet::from(["Update"])),
+        ("sn", HashSet::from(["Me"])),
     ];
-    let _result = client
-        .update(
-            "cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b",
-            "ou=people,dc=example,dc=com",
+
+    let base = String::from("ou=people,dc=example,dc=com");
+
+    client.create(
+            original_uid.as_str(),
+            base.as_str(),
             data,
-            Option::Some("6da70e51-7897-411f-9290-649ebfcb3269"),
+        )
+        .await?;
+
+    let new_cn = "I'm";
+    let new_sn = "Updated";
+
+    let data = vec![
+        Mod::Replace("cn", HashSet::from([new_cn])),
+        Mod::Replace("sn", HashSet::from([new_sn])),
+    ];
+    let new_uid = random_uid();
+
+    // This is the call we're testing.
+    client.update(
+            original_uid.as_str(),
+            base.as_str(),
+            data,
+            Option::Some(new_uid.as_str()),
         )
         .await?;
 
     let name_filter = EqFilter::from(
         "uid".to_string(),
-        "6da70e51-7897-411f-9290-649ebfcb3269".to_string(),
+        new_uid,
     );
     let user = client
         .search::<User>(
-            "ou=people,dc=example,dc=com",
+            base.as_str(),
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &vec!["cn", "sn", "uid"],
         )
         .await?;
 
-    assert_eq!(user.cn, "David_Update");
-    assert_eq!(user.sn, "Hanks_Update");
+    assert_eq!(user.cn, new_cn);
+    assert_eq!(user.sn, new_sn);
 
     Ok(())
 }
@@ -281,10 +325,36 @@ pub async fn test_streaming_search_no_records(client: LdapClient) -> anyhow::Res
 
 
 pub async fn test_delete(mut client: LdapClient) -> anyhow::Result<()> {
-     let _result = client
+    // First create a user to delete.
+    // A create_user method would be nice.. 🤔
+    let uid = random_uid();
+    let data = vec![
+        (
+            "objectClass",
+            HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
+        ),
+        (
+            "uid",
+            HashSet::from([uid.as_str()]),
+        ),
+        ("cn", HashSet::from(["Delete"])),
+        ("sn", HashSet::from(["Me"])),
+    ];
+
+    let base = String::from("ou=people,dc=example,dc=com");
+
+    client.create(
+            uid.as_str(),
+            base.as_str(),
+            data,
+        )
+        .await?;
+
+    // This is what we are really testing.
+    let _result = client
         .delete(
-            "4d9b08fe-9a14-4df0-9831-ea9992837f0d",
-            "ou=people,dc=example,dc=com",
+            uid.as_str(),
+            base.as_str(),
         )
         .await?;
 
@@ -311,8 +381,9 @@ pub async fn test_no_record_delete(mut client: LdapClient) -> anyhow::Result<()>
 
 
 pub async fn test_create_group(mut client: LdapClient) -> anyhow::Result<()> {
+    let name = append_random_id("test_group");
     let _result = client
-        .create_group("test_group", "dc=example,dc=com", "Some Description")
+        .create_group(name.as_str(), "dc=example,dc=com", "Some Description")
         .await?;
 
     Ok(())
@@ -320,43 +391,51 @@ pub async fn test_create_group(mut client: LdapClient) -> anyhow::Result<()> {
 
 
 pub async fn test_add_users_to_group(mut client: LdapClient) -> anyhow::Result<()> {
-    let _result = client
-        .create_group("test_group_1", "dc=example,dc=com", "Some Decription")
+    let group_name = append_random_id("user_add_test_group");
+    let group_dn = format!("cn={group_name},dc=example,dc=com");
+
+    client.create_group(group_name.as_str(), "dc=example,dc=com", "Some Decription")
         .await?;
 
-    let _result2 = client
-        .add_users_to_group(
+    client.add_users_to_group(
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
                 "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
             ],
-            "cn=test_group_1,dc=example,dc=com",
+            group_dn.as_str(),
         )
         .await?;
+
+    // Could check here that they are actually in the group.
 
     Ok(())
 }
 
 
 pub async fn test_get_members(mut client: LdapClient) -> anyhow::Result<()> {
-    let _result = client
-        .create_group("test_group_3", "dc=example,dc=com", "Some Decription 2")
+    // Let's first prepare a group.
+
+    let group_name = append_random_id("get_members_group");
+    let group_ou = String::from("dc=example,dc=com");
+    let group_dn = format!("cn={group_name},{group_ou}");
+
+    client.create_group(group_name.as_str(), group_ou.as_str(), "Some Decription 2")
         .await?;
 
-    let _result = client
-        .add_users_to_group(
+    client.add_users_to_group(
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
                 "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
             ],
-            "cn=test_group_3,dc=example,dc=com",
+            group_dn.as_str(),
         )
         .await?;
 
+    // This is what we are testing.
     let users = client
         .get_members::<User>(
-            "cn=test_group_3,dc=example,dc=com",
-            "dc=example,dc=com",
+            group_dn.as_str(),
+            group_ou.as_str(),
             Scope::Subtree,
             &vec!["cn", "sn", "uid"],
         )
@@ -377,29 +456,47 @@ pub async fn test_get_members(mut client: LdapClient) -> anyhow::Result<()> {
 
 
 pub async fn test_remove_users_from_group(mut client: LdapClient) -> anyhow::Result<()> {
-    let _result = client
-        .create_group("test_group_2", "dc=example,dc=com", "Some Decription 2")
+    // Let's first prepare a group.
+
+    let group_name = append_random_id("get_members_group");
+    let group_ou = String::from("dc=example,dc=com");
+    let group_dn = format!("cn={group_name},{group_ou}");
+
+    client.create_group(group_name.as_str(), group_ou.as_str(), "Some Decription 2")
         .await?;
 
-    let _result = client
-        .add_users_to_group(
+    client.add_users_to_group(
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
                 "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
             ],
-            "cn=test_group_2,dc=example,dc=com",
+            group_dn.as_str(),
         )
         .await?;
 
-    let _result = client
-        .remove_users_from_group(
-            "cn=test_group_2,dc=example,dc=com",
+    // This is what we are testing here.
+    client.remove_users_from_group(
+            group_dn.as_str(),
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
                 "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
             ],
         )
         .await?;
+
+    // Currently the library doesn't seem to able to handle empty groups so the
+    // verification below is commented out.
+
+    // let users = client
+    //     .get_members::<User>(
+    //         group_dn.as_str(),
+    //         group_ou.as_str(),
+    //         Scope::Subtree,
+    //         &vec!["cn", "sn", "uid"],
+    //     )
+    //     .await?;
+
+    // assert!(users.is_empty(), "The users weren't removed from the group.");
 
     Ok(())
 }
@@ -416,4 +513,32 @@ pub async fn test_associated_groups(mut client: LdapClient) -> anyhow::Result<()
     assert_eq!(result.len(), 2);
 
     Ok(())
+}
+
+
+
+/***************
+ *  Utilities  *
+ ***************/
+
+// These utilities should be moved to their own module,
+// if they are ever needed outside this file.
+
+
+/// Can be used to generate random names for things to avoid clashes.
+fn append_random_id(beginning: &str) -> String {
+    let mut rng = rand::thread_rng();
+    // A few in milliard are plenty unlikely to collide.
+    let random_id: u32 = rng.gen_range(0..1000000000);
+    format!("{beginning} {random_id}")
+}
+
+/// Generate a random LDAP compatible uid and return it's string representation.
+fn random_uid() -> String {
+    // v4 is random.
+    Uuid::new_v4()
+        .as_hyphenated()
+        // No idea whether LDAP actually cares about the case?
+        .encode_lower(&mut Uuid::encode_buffer())
+        .to_owned()
 }
