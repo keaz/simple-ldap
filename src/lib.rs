@@ -133,6 +133,13 @@ impl LdapClient {
 
 impl LdapClient {
 
+    /// Returns the ldap3 client
+    #[deprecated = "This abstraction leakage will be removed in a future release.
+                    Use the provided methods instead. If something's missing, open an issue in github."]
+    pub fn get_inner(&self) -> Ldap {
+        self.ldap.clone()
+    }
+
     /// End the LDAP connection.
     ///
     /// **Caution advised!**
