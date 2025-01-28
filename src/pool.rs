@@ -1,10 +1,25 @@
+/// # Pool
 ///
-/// Module for LDAP connection pooling.
+/// Module for LDAP connection pooling using [`deadpool`](https://docs.rs/deadpool/latest/deadpool/index.html).
 ///
 /// A single LDAP connection is able to handle multiple operations concurrently, but beyond a certain
 /// point it will become a bottleneck. This is where pooling comes in.
 ///
-/// The pool keeps multiple connections alive and gives them to you upon request (unless they're all in use.)
+/// The pool keeps multiple connections alive and gives them to you upon request (or makes you wait for one to become available.)
+///
+///
+/// ## Do I need connection pooling?
+///
+/// As always, there's no substitute for benchmarking on your particular usecase.
+///
+/// But as a general rule of thumb: If your code is some sort of service, e.g. a website needing to authenticate users as they try to login, use pooling. On the other hand if your code is a oneshot executable, such as the `ldapsearch` CLI tool, don't bother with pooling.
+///
+///
+/// ## Restrictions
+///
+/// There's a contract to follow with the LDAP clients you get from the pool.
+///
+/// **Do not `unbind` them. Just return them to the pool.**
 ///
 
 use std::num::NonZeroUsize;
@@ -13,7 +28,8 @@ use tracing::debug;
 
 use crate::{Error, LdapClient, LdapConfig};
 
-// Export the pool types.
+// Export the pool types in a standard manner.
+// Check the source to see the types this exposes
 managed_reexports!(
     "simple_ldap",
     Manager,
@@ -62,12 +78,11 @@ impl deadpool::managed::Manager for Manager {
 }
 
 /// Create a new connection pool.
-pub async fn build_connection_pool(ldap_config: LdapConfig, pool_size: NonZeroUsize) -> Result<Pool, String> {
+pub async fn build_connection_pool(ldap_config: LdapConfig, pool_size: NonZeroUsize) -> Result<Pool, BuildError> {
     let manager = Manager::new(ldap_config);
     let pool = Pool::builder(manager)
         .max_size(pool_size.get())
-        .build()
-        .map_err(|build_err| format!("Failed to build the pool: {build_err:?}"))?;
+        .build()?;
 
     Ok(pool)
 }

@@ -24,8 +24,11 @@ tracing = "0.1.41"
 url = "2.5.4"
 
 [dev-dependencies]
+# This little hack is neede0.9.0 enabling optional features during testing.
+# https://github.com/rust-lang/cargo/issues/2911#issuecomment-749580481
+simple-ldap = { path = ".", features = ["pool"]}
 anyhow = "1.0.95"
-rand = "0.8.5"
+rand = "0.9.0"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 # v4 is random uids.
 uuid = { version = "1.12.1", features = ["v4"] }

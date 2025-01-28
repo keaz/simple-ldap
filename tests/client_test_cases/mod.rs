@@ -1,4 +1,5 @@
-//! Integration test cases using a plain `LdapClient`.
+//! Integration test cases using a plain `LdapClient`,
+//! or really something that dereferences into it.
 //!
 //! The functions in this file are basically test bodies, and cannot be run directly.
 //! They should be called from other testing modules.
@@ -14,21 +15,30 @@
 //!
 //! It's enough to satisfy this requirement probabilistically e.g. by using random names
 //! that are unlikely to collide.
+//!
+//!
+//! # DerefMut
+//!
+//! The test case functions don't create LdapClients themselves, but take them from outside
+//! as `DerefMut<Target = LdapClient>`. This way we can utilize the same test cases with
+//! pooled and plain clients.
+//!
+//! When calling these with plain `LdapClient`, wrap it in a `Box`.
 
 
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::{Deref, DerefMut}};
 use futures::StreamExt;
 use rand::Rng;
 use serde::Deserialize;
 use simple_ldap::{
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
-    Error, LdapClient
+    Error, LdapClient, LdapConfig
 };
 use uuid::Uuid;
 
 
-pub async fn test_create_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let uid = random_uid();
     let data = vec![
         (
@@ -62,7 +72,7 @@ pub struct User {
     pub sn: String,
 }
 
-pub async fn test_search_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
     let user = client
         .search::<User>(
@@ -81,7 +91,7 @@ pub async fn test_search_record(mut client: LdapClient) -> anyhow::Result<()> {
 }
 
 
-pub async fn test_search_no_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_search_no_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "SamX".to_string());
     let user = client
         .search::<User>(
@@ -102,7 +112,7 @@ pub async fn test_search_no_record(mut client: LdapClient) -> anyhow::Result<()>
 }
 
 
-pub async fn test_search_multiple_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_search_multiple_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
     let user = client
         .search::<User>(
@@ -123,7 +133,7 @@ pub async fn test_search_multiple_record(mut client: LdapClient) -> anyhow::Resu
 }
 
 
-pub async fn test_update_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_update_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let data = vec![
         Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
         Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
@@ -141,7 +151,7 @@ pub async fn test_update_record(mut client: LdapClient) -> anyhow::Result<()> {
 }
 
 
-pub async fn test_update_no_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_update_no_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let data = vec![
         Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
         Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
@@ -165,7 +175,7 @@ pub async fn test_update_no_record(mut client: LdapClient) -> anyhow::Result<()>
 }
 
 
-pub async fn test_update_uid_record(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_update_uid_record<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     // First create a user to update.
     // A create_user method would be nice.. 🤔
     let original_uid = random_uid();
@@ -229,10 +239,10 @@ pub async fn test_update_uid_record(mut client: LdapClient) -> anyhow::Result<()
 }
 
 
-pub async fn test_streaming_search(client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
     let attra = vec!["cn", "sn", "uid"];
-    let mut result = client
+    let mut stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
@@ -242,7 +252,7 @@ pub async fn test_streaming_search(client: LdapClient) -> anyhow::Result<()> {
         .await?;
 
     let mut count = 0;
-    while let Some(record) = result.next().await {
+    while let Some(record) = stream.next().await {
         match record {
             Ok(record) => {
                 let _ = record.to_record::<User>().unwrap();
@@ -253,14 +263,14 @@ pub async fn test_streaming_search(client: LdapClient) -> anyhow::Result<()> {
             }
         }
     }
-    let _ = result.cleanup().await;
+    let _ = stream.cleanup().await;
     assert!(count == 2);
 
     Ok(())
 }
 
 
-pub async fn test_streaming_search_with(client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_streaming_search_with<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
     let attra = vec!["cn", "sn", "uid"];
     let mut result = client
@@ -292,7 +302,7 @@ pub async fn test_streaming_search_with(client: LdapClient) -> anyhow::Result<()
 }
 
 
-pub async fn test_streaming_search_no_records(client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
        let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
     let attra = vec!["cn", "sn", "uid"];
     let mut result = client
@@ -324,7 +334,7 @@ pub async fn test_streaming_search_no_records(client: LdapClient) -> anyhow::Res
 }
 
 
-pub async fn test_delete(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_delete<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     // First create a user to delete.
     // A create_user method would be nice.. 🤔
     let uid = random_uid();
@@ -362,7 +372,7 @@ pub async fn test_delete(mut client: LdapClient) -> anyhow::Result<()> {
 }
 
 
-pub async fn test_no_record_delete(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_no_record_delete<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
         let result = client
         .delete(
             "4d9b08fe-9a14-4df0-9831-ea9992837f0x",
@@ -380,7 +390,7 @@ pub async fn test_no_record_delete(mut client: LdapClient) -> anyhow::Result<()>
 }
 
 
-pub async fn test_create_group(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_create_group<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let name = append_random_id("test_group");
     let _result = client
         .create_group(name.as_str(), "dc=example,dc=com", "Some Description")
@@ -390,7 +400,7 @@ pub async fn test_create_group(mut client: LdapClient) -> anyhow::Result<()> {
 }
 
 
-pub async fn test_add_users_to_group(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_add_users_to_group<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let group_name = append_random_id("user_add_test_group");
     let group_dn = format!("cn={group_name},dc=example,dc=com");
 
@@ -412,7 +422,7 @@ pub async fn test_add_users_to_group(mut client: LdapClient) -> anyhow::Result<(
 }
 
 
-pub async fn test_get_members(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_get_members<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     // Let's first prepare a group.
 
     let group_name = append_random_id("get_members_group");
@@ -455,7 +465,7 @@ pub async fn test_get_members(mut client: LdapClient) -> anyhow::Result<()> {
 }
 
 
-pub async fn test_remove_users_from_group(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_remove_users_from_group<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     // Let's first prepare a group.
 
     let group_name = append_random_id("get_members_group");
@@ -502,7 +512,7 @@ pub async fn test_remove_users_from_group(mut client: LdapClient) -> anyhow::Res
 }
 
 
-pub async fn test_associated_groups(mut client: LdapClient) -> anyhow::Result<()> {
+pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(mut client: Client) -> anyhow::Result<()> {
     let result = client
         .get_associtated_groups(
             "ou=group,dc=example,dc=com",
@@ -521,13 +531,11 @@ pub async fn test_associated_groups(mut client: LdapClient) -> anyhow::Result<()
  *  Utilities  *
  ***************/
 
-// These utilities should be moved to their own module,
-// if they are ever needed outside this file.
-
+// Some of these utilities are even public because of cargo's test module limitations.
 
 /// Can be used to generate random names for things to avoid clashes.
 fn append_random_id(beginning: &str) -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // A few in milliard are plenty unlikely to collide.
     let random_id: u32 = rng.gen_range(0..1000000000);
     format!("{beginning} {random_id}")
@@ -541,4 +549,18 @@ fn random_uid() -> String {
         // No idea whether LDAP actually cares about the case?
         .encode_lower(&mut Uuid::encode_buffer())
         .to_owned()
+}
+
+
+/// Get ldap configuration for conneting to the test server.
+pub fn ldap_config() -> anyhow::Result<LdapConfig> {
+    let config = LdapConfig {
+        bind_dn: String::from("cn=manager"),
+        bind_password: String::from("password"),
+        ldap_url: "ldap://localhost:1389/dc=example,dc=com".parse()?,
+        dn_attribute: None,
+        connection_settings: None
+    };
+
+    Ok(config)
 }

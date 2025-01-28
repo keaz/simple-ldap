@@ -87,8 +87,8 @@ pub struct LdapConfig {
 ///
 pub struct LdapClient {
     /// The internal connection handle.
-    pub ldap: Ldap,
-    pub dn_attr: Option<String>,
+    ldap: Ldap,
+    dn_attr: Option<String>,
 }
 
 impl LdapClient {
@@ -408,7 +408,7 @@ impl LdapClient {
     }
 
     async fn streaming_search_inner<'a>(
-        mut self,
+        &mut self,
         base: &'a str,
         scope: Scope,
         filter: &'a (impl Filter + ?Sized),
@@ -486,7 +486,15 @@ impl LdapClient {
     /// }
     /// ```
     pub async fn streaming_search<'a>(
-        self,
+        // This self reference  lifetime has some nuance behind it.
+        //
+        // In principle it could just be a value, but then you wouldn't be able to call this
+        // with a pooled client, as the deadpool `Object` wrapper only ever gives out references.
+        //
+        // The lifetime is needed to guarantee that the client is not returned to the pool before
+        // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
+        // just makes copy. So this lifetime is here just to enforce correct pool usage.
+        &'a mut self,
         base: &'a str,
         scope: Scope,
         filter: &'a impl Filter,
@@ -555,7 +563,15 @@ impl LdapClient {
     /// }
     /// ```
     pub async fn streaming_search_with<'a>(
-        mut self,
+        // This self reference  lifetime has some nuance behind it.
+        //
+        // In principle it could just be a value, but then you wouldn't be able to call this
+        // with a pooled client, as the deadpool `Object` wrapper only ever gives out references.
+        //
+        // The lifetime is needed to guarantee that the client is not returned to the pool before
+        // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
+        // just makes copy. So this lifetime is here just to enforce correct pool usage.
+        &'a mut self,
         base: &'a str,
         scope: Scope,
         filter: &'a (impl Filter + ?Sized),
@@ -1550,14 +1566,9 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
+    //! Local tests that don't need to connect to a server.
 
-    use filter::ContainsFilter;
-    use futures::StreamExt;
-    use ldap3::tokio;
     use serde::Deserialize;
-
-    use crate::{filter::EqFilter, LdapConfig};
-
     use super::*;
 
     #[test]
