@@ -5,6 +5,9 @@
 //! They should be called from other testing modules.
 //! The point of this is to allow running the same test cases with and without pooling.
 //!
+//! **All the test cases in this file should be run with and without pooling!**
+//! Pay attention to this especially when adding tests cases.
+//!
 //!
 //! # Idempotence
 //!
