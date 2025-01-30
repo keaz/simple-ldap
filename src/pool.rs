@@ -15,11 +15,43 @@
 /// But as a general rule of thumb: If your code is some sort of service, e.g. a website needing to authenticate users as they try to login, use pooling. On the other hand if your code is a oneshot executable, such as the `ldapsearch` CLI tool, don't bother with pooling.
 ///
 ///
-/// ## Restrictions
+/// ## Example
 ///
-/// There's a contract to follow with the LDAP clients you get from the pool.
+/// ```no_run
+/// use simple_ldap::{
+///     LdapConfig,
+///     pool::build_connection_pool
+/// };
+/// use std::num::NonZeroUsize;
+/// use url::Url;
 ///
-/// **Do not `unbind` them. Just return them to the pool.**
+/// #[tokio::main]
+/// async fn main() -> () {
+///     let ldap_config = LdapConfig {
+///         bind_dn: String::from("cn=manager"),
+///         bind_password: String::from("password"),
+///         ldap_url: Url::parse("ldap://localhost:1389/dc=example,dc=com").unwrap(),
+///         dn_attribute: None,
+///         connection_settings: None
+///     };
+///     let pool_size = NonZeroUsize::new(10).unwrap();
+///
+///     // Build the ldap connection pool.
+///     let pool = build_connection_pool(ldap_config, pool_size).await.unwrap();
+///
+///     // Get clients from the pool.
+///     let mut client_from_pool = pool.get().await.unwrap();
+///
+///     // Perform operations on them just as with a normal LdapClient.
+///     let result = client_from_pool.create_group("New Group", "dc=example,dc=com", "Some Description").await;
+/// }
+/// ```
+///
+///
+/// ## Unbind
+///
+/// You cannot `unbind` the clients got from the pool.
+/// Just return them to the pool. It will take care of it.
 ///
 
 use std::num::NonZeroUsize;

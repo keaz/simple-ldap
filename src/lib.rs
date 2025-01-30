@@ -151,6 +151,8 @@ impl LdapClient {
     /// It's fine to skip it, and because of the async hurdless outlined above,
     /// I would perhaps even recommend it.
     // Consuming self to prevent accidental use after unbind.
+    // This also conveniently prevents calling this with pooled clients, as the
+    // wrapper `Object` prohibiths moving.
     pub async fn unbind(mut self) -> Result<(), Error> {
         match self.ldap.unbind().await {
             Ok(_) => Ok(()),
@@ -163,34 +165,41 @@ impl LdapClient {
     /// The search is performed using the provided filter. The filter should be a filter that matches a single user.
     ///
     /// # Arguments
+    ///
     /// * `base` - The base DN to search for the user
     /// * `uid` - The uid of the user
     /// * `password` - The password of the user
     /// * `filter` - The filter to search for the user
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if the authentication fails
     ///
+    ///
     /// # Example
-    /// ```
     ///
-    /// use simple_ldap::filter::EqFilter;
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     filter::EqFilter
+    /// };
+    /// use url::Url;
     ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
     ///
-    ///     let result = ldap.authenticate("", "Sam", "password", Box::new(name_filter)).await;
+    ///     let result = client.authenticate("", "Sam", "password", Box::new(name_filter)).await;
     /// }
     /// ```
     pub async fn authenticate(
@@ -297,6 +306,7 @@ impl LdapClient {
         Ok(SearchEntry::construct(record.to_owned()))
     }
 
+
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
@@ -304,40 +314,57 @@ impl LdapClient {
     /// Result will be mapped to a struct of type T.
     ///
     /// # Arguments
+    ///
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
     /// * `attributes` - The attributes to return from the search
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<T, Error>` - The result will be mapped to a struct of type T
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::filter::EqFilter;
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     filter::EqFilter,
+    ///     ldap3::Scope
+    /// };
+    /// use url::Url;
+    /// use serde::Deserialize;
+    ///
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct User {
+    ///     uid: String,
+    ///     cn: String,
+    ///     sn: String,
+    /// }
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let user = ldap
+    ///     let user_result = client
     ///         .search::<User>(
     ///         "ou=people,dc=example,dc=com",
-    ///         self::ldap3::Scope::OneLevel,
+    ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         vec!["cn", "sn", "uid"],
-    ///         ).await;
+    ///         &vec!["cn", "sn", "uid"],
+    ///     ).await;
     /// }
     /// ```
     ///
@@ -358,19 +385,28 @@ impl LdapClient {
     /// This operatrion is useful when records has multi-valued attributes.
     ///
     /// # Arguments
+    ///
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
     /// * `attributes` - The attributes to return from the search
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<T, Error>` - The result will be mapped to a struct of type T
     ///
+    ///
     /// # Example
-    /// ```
-    /// use simple_ldap::filter::EqFilter;
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     filter::EqFilter,
+    ///     ldap3::Scope
+    /// };
+    /// use url::Url;
+    /// use serde::Deserialize;
     ///
     ///
     /// #[derive(Debug, Deserialize)]
@@ -379,20 +415,25 @@ impl LdapClient {
     ///    key2: Vec<String>,
     /// }
     ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let user = ldap.search_multi_valued::<TestMultiValued>("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"]).await;
+    ///     let user_result = client.search_multi_valued::<TestMultiValued>(
+    ///         "",
+    ///         Scope::OneLevel,
+    ///         &name_filter,
+    ///         &vec!["cn", "sn", "uid"]
+    ///     ).await;
     /// }
     /// ```
     ///
@@ -433,48 +474,71 @@ impl LdapClient {
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// Method will return a Stream. The stream can be used to iterate through the search results.
-    /// This method take the ownership of the LdapClient.
+    /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
+    /// memory footprint.
+    ///
+    /// Prefer streaming search if you don't know that the result set is going to be small.
+    ///
     ///
     /// # Arguments
+    ///
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
     /// * `attributes` - The attributes to return from the search
     ///
+    ///
     /// # Returns
-    /// * `Result<Stream, Error>` - The result will be mapped to a Stream.
+    ///
+    /// * `Result<Stream, Error>` - The result will be mapped to a Stream. **Remember to `cleanup()` it when you're done!**
+    ///
     ///
     /// # Example
-    /// ```
-    /// use simple_ldap::filter::EqFilter;
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     filter::EqFilter,
+    ///     ldap3::Scope
+    /// };
+    /// use url::Url;
+    /// use serde::Deserialize;
+    /// use futures::StreamExt;
     ///
     ///
-    /// #[derive(Debug, Deserialize)]
-    /// struct TestMultiValued {
-    ///    key1: Vec<String>,
-    ///    key2: Vec<String>,
+    /// #[derive(Deserialize, Debug)]
+    /// struct User {
+    ///     uid: String,
+    ///     cn: String,
+    ///     sn: String,
     /// }
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let mut stream = ldap.streaming_search("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"], 3).await.unwrap();
-    ///     while let Some(record) = stream.next().await {
-    ///         match record {
-    ///             Ok(record) => {
-    ///                 let user: User = record.to_record().unwrap();
+    ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
+    ///     let attributes = vec!["cn", "sn", "uid"];
+    ///
+    ///     let mut stream = client.streaming_search(
+    ///         "",
+    ///         Scope::OneLevel,
+    ///         &name_filter,
+    ///         &attributes
+    ///     ).await.unwrap();
+    ///
+    ///     while let Some(result) = stream.next().await {
+    ///         match result {
+    ///             Ok(element) => {
+    ///                 let user: User = element.to_record().unwrap();
     ///                 println!("User: {:?}", user);
     ///             }
     ///             Err(err) => {
@@ -485,6 +549,7 @@ impl LdapClient {
     ///     stream.cleanup().await;
     /// }
     /// ```
+    ///
     pub async fn streaming_search<'a>(
         // This self reference  lifetime has some nuance behind it.
         //
@@ -507,51 +572,76 @@ impl LdapClient {
         Ok(entry)
     }
 
+
     ///
     /// This method is used to search multiple records from the LDAP server and results will be paginated.
-    /// Method will return a Stream. The stream can be used to iterate through the search results.
-    /// This method take the ownership of the LdapClient.
+    /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
+    /// memory footprint.
+    ///
+    /// Prefer streaming search if you don't know that the result set is going to be small.
+    ///
     ///
     /// # Arguments
+    ///
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
     /// * `page_size` - The maximum number of records in a page
     /// * `attributes` - The attributes to return from the search
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<Stream, Error>` - A stream that can be used to iterate through the search results.
     ///
+    ///
     /// # Example
-    /// ```
-    /// use simple_ldap::filter::EqFilter;
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     filter::EqFilter,
+    ///     ldap3::Scope
+    /// };
+    /// use url::Url;
+    /// use serde::Deserialize;
+    /// use futures::StreamExt;
     ///
     ///
-    /// #[derive(Debug, Deserialize)]
-    /// struct TestMultiValued {
-    ///    key1: Vec<String>,
-    ///    key2: Vec<String>,
+    /// #[derive(Deserialize, Debug)]
+    /// struct User {
+    ///     uid: String,
+    ///     cn: String,
+    ///     sn: String,
     /// }
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let mut stream = ldap.streaming_search("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"], 3).await.unwrap();
-    ///     while let Some(record) = stream.next().await {
-    ///         match record {
-    ///             Ok(record) => {
-    ///                 let user: User = record.to_record().unwrap();
+    ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
+    ///     let attributes = vec!["cn", "sn", "uid"];
+    ///
+    ///     let mut stream = client.streaming_search_with(
+    ///         "",
+    ///         Scope::OneLevel,
+    ///         &name_filter,
+    ///         &attributes,
+    ///         200 // The pagesize
+    ///     ).await.unwrap();
+    ///
+    ///     while let Some(result) = stream.next().await {
+    ///         match result {
+    ///             Ok(element) => {
+    ///                 let user: User = element.to_record().unwrap();
     ///                 println!("User: {:?}", user);
     ///             }
     ///             Err(err) => {
@@ -562,6 +652,7 @@ impl LdapClient {
     ///     stream.cleanup().await;
     /// }
     /// ```
+    ///
     pub async fn streaming_search_with<'a>(
         // This self reference  lifetime has some nuance behind it.
         //
@@ -604,29 +695,35 @@ impl LdapClient {
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `uid` - The uid of the record
     /// * `base` - The base DN to create the record
     /// * `data` - The attributes of the record
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if the record creation fails
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    /// use std::collections::HashSet;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let data = vec![
     ///         ( "objectClass",HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),),
@@ -635,7 +732,7 @@ impl LdapClient {
     ///         ("sn", HashSet::from(["Ranasingh"])),
     ///     ];
     ///
-    ///     let result = ldap.create("bd9b91ec-7a69-4166-bf67-cc7e553b2fd9", "ou=people,dc=example,dc=com", data).await;
+    ///     let result = client.create("bd9b91ec-7a69-4166-bf67-cc7e553b2fd9", "ou=people,dc=example,dc=com", data).await;
     /// }
     /// ```
     ///
@@ -666,43 +763,59 @@ impl LdapClient {
         Ok(())
     }
 
+
     ///
     /// Update a record in the LDAP server. The record will be updated in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `uid` - The uid of the record
     /// * `base` - The base DN to update the record
     /// * `data` - The attributes of the record
     /// * `new_uid` - The new uid of the record. If the new uid is provided, the uid of the record will be updated.
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if the record update fails
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     ldap3::Mod
+    /// };
+    /// use url::Url;
+    /// use std::collections::HashSet;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let data = vec![
     ///         Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
     ///         Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
     ///     ];
     ///
-    ///     let result = ldap.update("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com", data, Option::None).await;
+    ///     let result = client.update(
+    ///         "e219fbc0-6df5-4bc3-a6ee-986843bb157e",
+    ///         "ou=people,dc=example,dc=com",
+    ///         data,
+    ///         None
+    ///     ).await;
     /// }
     /// ```
+    ///
     pub async fn update(
         &mut self,
         uid: &str,
@@ -779,30 +892,35 @@ impl LdapClient {
     /// Delete a record in the LDAP server. The record will be deleted in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `uid` - The uid of the record
     /// * `base` - The base DN to delete the record
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if the record delete fails
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = ldap.delete("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com").await;
+    ///     let result = client.delete("e219fbc0-6df5-4bc3-a6ee-986843bb157e", "ou=people,dc=example,dc=com").await;
     /// }
     /// ```
     pub async fn delete(&mut self, uid: &str, base: &str) -> Result<(), Error> {
@@ -842,31 +960,35 @@ impl LdapClient {
     /// Create a new group in the LDAP server. The group will be created in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `group_name` - The name of the group
     /// * `group_ou` - The ou of the group
     /// * `description` - The description of the group
     ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if the group creation fails
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
+    ///     let result = client.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;
     /// }
     /// ```
     pub async fn create_group(
@@ -907,31 +1029,37 @@ impl LdapClient {
     /// Add users to a group in the LDAP server. The group will be updated in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `users` - The list of users to add to the group
     /// * `group_dn` - The dn of the group
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if failed to add users to the group
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = ldap.add_users_to_group(vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"],
-    ///     "cn=test_group,ou=groups,dc=example,dc=com").await;
+    ///     let result = client.add_users_to_group(
+    ///         vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"],
+    ///         "cn=test_group,ou=groups,dc=example,dc=com").await;
     /// }
     /// ```
     pub async fn add_users_to_group(
@@ -976,18 +1104,27 @@ impl LdapClient {
     /// Get users of a group in the LDAP server. The group will be searched in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `group_dn` - The dn of the group
     /// * `base_dn` - The base dn to search for the users
     /// * `scope` - The scope of the search
     /// * `attributes` - The attributes to return from the search
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<Vec<T>, Error>` - Returns a vector of structs of type T
     ///
+    ///
     /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// ```no_run
+    /// use simple_ldap::{
+    ///     LdapClient, LdapConfig,
+    ///     ldap3::Scope
+    /// };
+    /// use url::Url;
+    /// use serde::Deserialize;
     ///
     /// #[derive(Debug, Deserialize)]
     /// struct User {
@@ -996,23 +1133,27 @@ impl LdapClient {
     ///     sn: String,
     /// }
     ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = ldap.get_members::<User>("cn=test_group,ou=groups,dc=example,dc=com",
-    ///     "ou=people,dc=example,dc=com",
-    ///     self::ldap3::Scope::OneLevel, vec!["cn", "sn", "uid"]).await;
+    ///     let result = client.get_members::<User>(
+    ///         "cn=test_group,ou=groups,dc=example,dc=com",
+    ///         "ou=people,dc=example,dc=com",
+    ///         Scope::OneLevel,
+    ///         &vec!["cn", "sn", "uid"]
+    ///     ).await;
     /// }
     /// ```
+    ///
     pub async fn get_members<T: for<'a> serde::Deserialize<'a>>(
         &mut self,
         group_dn: &str,
@@ -1091,32 +1232,39 @@ impl LdapClient {
     ///
     /// Remove users from a group in the LDAP server. The group will be updated in the provided base DN.
     /// This method will remove all the users provided from the group.
+    ///
+    ///
     /// # Arguments
+    ///
     /// * `group_dn` - The dn of the group
     /// * `users` - The list of users to remove from the group
     ///
+    ///
     /// # Returns
+    ///
     /// * `Result<(), Error>` - Returns an error if failed to remove users from the group
     ///
+    ///
     /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
     /// use std::collections::HashSet;
     ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     ldap.remove_users_from_group("cn=test_group,ou=groups,dc=example,dc=com",
+    ///     let result = client.remove_users_from_group("cn=test_group,ou=groups,dc=example,dc=com",
     ///     vec!["uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com"]).await;
     /// }
     /// ```
@@ -1162,30 +1310,34 @@ impl LdapClient {
     /// Get the groups associated with a user in the LDAP server. The user will be searched in the provided base DN.
     ///
     /// # Arguments
+    ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
     ///
     /// # Returns
+    ///
     /// * `Result<Vec<String>, Error>` - Returns a vector of group names
     ///
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
     /// async fn main(){
     ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
     ///     };
     ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = ldap.get_associtated_groups("ou=groups,dc=example,dc=com",
+    ///     let result = client.get_associtated_groups("ou=groups,dc=example,dc=com",
     ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
     /// }
     /// ```
@@ -1362,40 +1514,12 @@ where
         }
     }
 
-    /// Cleanup the stream. This method should be called after the stream is finished.
+    ///
+    /// Cleanup the stream. This method should be called after the stream is finished,
+    /// especially if you're stopping before the stream ends naturally.
+    ///
     /// This method will cleanup the stream and close the connection.
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
     ///
-    /// async fn main(){
-    ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None
-    ///     };
-    ///
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let mut ldap = pool.get_connection().await;
-    ///
-    ///     let mut stream = ldap.streaming_search("", self::ldap3::Scope::OneLevel, &name_filter, vec!["cn", "sn", "uid"], 3).await.unwrap();
-    ///     while let Some(record) = stream.next().await {
-    ///         match record {
-    ///             Ok(record) => {
-    ///                 let user: User = record.to_record().unwrap();
-    ///                 println!("User: {:?}", user);
-    ///             }
-    ///             Err(err) => {
-    ///                 println!("Error: {:?}", err);
-    ///             }
-    ///         }
-    ///     }
-    ///     stream.cleanup().await;
-    /// }
-    /// ```
     pub async fn cleanup(&mut self) -> Result<(), Error> {
         let state = self.search_stream.state();
         if state == StreamState::Done || state == StreamState::Closed {
@@ -1459,55 +1583,12 @@ pub struct Record {
 }
 
 impl Record {
-    /// Create a new Record object with single valued attributes
-    /// # Example
-    /// ```
-    /// use simple_ldap::LdapClient;
-    /// use simple_ldap::pool::LdapConfig;
-    /// use simple_ldap::filter::EqFilter;
     ///
-    /// #[derive(Debug, Deserialize)]
-    /// struct User {
-    ///    uid: String,
-    ///   cn: String,
-    ///   sn: String,
-    /// }
-    ///
-    /// async fn main(){
-    ///
-    ///     let ldap_config = LdapConfig {
-    ///         bind_dn: "cn=manager".to_string(),
-    ///         bind_pw: "password".to_string(),
-    ///         ldap_url: "ldap://localhost:1389/dc=example,dc=com".to_string(),
-    ///         pool_size: 10,
-    ///         dn_attribute: None,
-    ///     };
-    ///     let pool = pool::build_connection_pool(&ldap_config).await;
-    ///     let ldap = pool.get_connection().await.unwrap();
-    ///
-    ///     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
-    ///     let attra = vec!["cn", "sn", "uid"];
-    ///     let result = ldap.streaming_search(
-    ///        "ou=people,dc=example,dc=com",
-    ///        self::ldap3::Scope::OneLevel,
-    ///        &name_filter,
-    ///        &attra,).await;
-    ///
-    ///     let mut result = result.unwrap();
-    ///     let mut count = 0;
-    ///     while let Some(record) = result.next().await {
-    ///         match record {
-    ///             Ok(record) => {
-    ///                 let user = record.to_record::<User>().unwrap();
-    ///                 count += 1;
-    ///             }
-    ///             Err(_) => {
-    ///                 break;
-    ///             }
-    ///         }
-    ///     }
-    ///     result.cleanup().await;
-    /// }
+    /// Create a new Record object with single valued attributes.
+    /// This is essentially parsing the response records into usable types.
+    //
+    // This is kind of missnomer, as we aren't creating records here.
+    // Perhaps something like "deserialize" would fit better?
     pub fn to_record<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
         to_signle_value(self.search_entry)
     }

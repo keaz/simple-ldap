@@ -7,8 +7,17 @@ A ldap client library that wraps [ldap3](https://github.com/inejge/ldap3) to mak
 [![Documentation](https://docs.rs/simple-ldap/badge.svg)](https://docs.rs/simple-ldap)
 
 ## Usage
-```
+
+Adding `simple_ldap` as a dependency to your project:
+
+```commandline
 cargo add simple-ldap
+```
+
+Other useful pieces you'll likely need:
+
+```commandline
+cargo add url serde --features serde/derive
 ```
 
 
@@ -57,7 +66,7 @@ async fn main() -> Result<()> {
             pool_size: 10,
             dn_attribute: None,
         };
-        
+
     let pool = pool::build_connection_pool(&ldap_config).await;
     let mut ldap = pool.pool.get_connection().await.unwrap();
 
@@ -98,7 +107,7 @@ async fn main() -> Result<()> {
             pool_size: 10,
             dn_attribute: None,
         };
-        
+
     let pool = pool::build_connection_pool(&ldap_config).await;
     let mut ldap = pool.pool.get_connection().await.unwrap();
         let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
@@ -174,7 +183,7 @@ async fn main() -> Result<()> {
             pool_size: 10,
             dn_attribute: None,
         };
-        
+
     let pool = pool::build_connection_pool(&ldap_config).await;
     let mut ldap = pool.pool.get_connection().await.unwrap();
         let data = vec![
@@ -203,7 +212,7 @@ async fn main() -> Result<()> {
             pool_size: 10,
             dn_attribute: None,
         };
-        
+
     let pool = pool::build_connection_pool(&ldap_config).await;
     let mut ldap = pool.pool.get_connection().await.unwrap();
 
@@ -221,7 +230,7 @@ async fn main() -> Result<()> {
 ```rust
 use simple_ldap::LdapClient;
 use simple_ldap::pool::LdapConfig;
-     
+
 let ldap_config = LdapConfig {
     bind_dn: "cn=manager".to_string(),
     bind_pw: "password".to_string(),
@@ -229,7 +238,7 @@ let ldap_config = LdapConfig {
     pool_size: 10,
     dn_attribute: None,
 };
-     
+
 let pool = pool::build_connection_pool(&ldap_config).await;
 let mut ldap = pool.pool.get_connection().await.unwrap();
 let result = ldap.create_group("test_group", "ou=groups,dc=example,dc=com", "test group").await;

@@ -20,7 +20,7 @@ impl AndFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::AndFilter;
+    /// use simple_ldap::filter::AndFilter;
     ///
     /// let filter = AndFilter::new();
     /// ```
@@ -42,7 +42,7 @@ impl AndFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::{AndFilter, EqFilter};
+    /// use simple_ldap::filter::{AndFilter, EqFilter};
     ///
     /// let mut filter = AndFilter::new();
     /// filter.add(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
@@ -75,7 +75,7 @@ impl OrFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::OrFilter;
+    /// use simple_ldap::filter::OrFilter;
     ///
     /// let filter = OrFilter::new();
     /// ```
@@ -97,7 +97,7 @@ impl OrFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::{OrFilter, EqFilter};
+    /// use simple_ldap::filter::{OrFilter, EqFilter};
     ///
     /// let mut filter = OrFilter::new();
     /// filter.add(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
@@ -134,7 +134,7 @@ impl EqFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::EqFilter;
+    /// use simple_ldap::filter::EqFilter;
     ///
     /// let filter = EqFilter::from("cn".to_string(), "test".to_string());
     /// ```
@@ -164,7 +164,7 @@ impl NotFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::{NotFilter, EqFilter};
+    /// use simple_ldap::filter::{NotFilter, EqFilter};
     ///
     /// let filter = NotFilter::from(Box::new(EqFilter::from("cn".to_string(), "test".to_string())));
     /// ```
@@ -206,7 +206,7 @@ impl LikeFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::{LikeFilter, WildardOn};
+    /// use simple_ldap::filter::{LikeFilter, WildardOn};
     ///
     /// let filter = LikeFilter::from("cn".to_string(), "test".to_string(), WildardOn::Pre);
     /// ```
@@ -245,7 +245,7 @@ impl ContainsFilter {
     /// # Examples
     ///
     /// ```
-    /// use ldap_rs::filter::ContainsFilter;
+    /// use simple_ldap::filter::ContainsFilter;
     ///
     /// let filter = ContainsFilter::from("cn".to_string(), "test".to_string());
     /// ```

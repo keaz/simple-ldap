@@ -1,3 +1,5 @@
+//! # Test cases
+//!
 //! Integration test cases using a plain `LdapClient`,
 //! or really something that dereferences into it.
 //!
@@ -9,7 +11,7 @@
 //! Pay attention to this especially when adding tests cases.
 //!
 //!
-//! # Idempotence
+//! ## Idempotence
 //!
 //! Tests in this file should be **idenpotent.**
 //! I.e. running the test twice against the same LDAP server should yield identical test results.
@@ -20,7 +22,15 @@
 //! that are unlikely to collide.
 //!
 //!
-//! # DerefMut
+//! ## Parallelism
+//!
+//! The tests need to be able run in parallel. This includes multiple instances of the same test.
+//! This is required when running these with a pool.
+//!
+//! In practice this mostly follows from idempotency.
+//!
+//!
+//! ## DerefMut
 //!
 //! The test case functions don't create LdapClients themselves, but take them from outside
 //! as `DerefMut<Target = LdapClient>`. This way we can utilize the same test cases with
@@ -29,7 +39,7 @@
 //! When calling these with plain `LdapClient`, wrap it in a `Box`.
 
 
-use std::{collections::HashSet, ops::{Deref, DerefMut}};
+use std::{collections::HashSet, ops::DerefMut};
 use futures::StreamExt;
 use rand::Rng;
 use serde::Deserialize;
@@ -38,6 +48,7 @@ use simple_ldap::{
     ldap3::{Mod, Scope},
     Error, LdapClient, LdapConfig
 };
+use url::Url;
 use uuid::Uuid;
 
 
@@ -540,7 +551,7 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(mut c
 fn append_random_id(beginning: &str) -> String {
     let mut rng = rand::rng();
     // A few in milliard are plenty unlikely to collide.
-    let random_id: u32 = rng.gen_range(0..1000000000);
+    let random_id: u32 = rng.random_range(0..1000000000);
     format!("{beginning} {random_id}")
 }
 
@@ -560,7 +571,7 @@ pub fn ldap_config() -> anyhow::Result<LdapConfig> {
     let config = LdapConfig {
         bind_dn: String::from("cn=manager"),
         bind_password: String::from("password"),
-        ldap_url: "ldap://localhost:1389/dc=example,dc=com".parse()?,
+        ldap_url: Url::parse("ldap://localhost:1389/dc=example,dc=com")?,
         dn_attribute: None,
         connection_settings: None
     };
