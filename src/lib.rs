@@ -4,12 +4,15 @@
 //! This provides high-level functions that helps to interact with LDAP.
 //!
 //!
-//! # Documentation
+//! ## Features
 //!
-//! * [Examples Repository](https://github.com/keaz/simple-ldap)
+//! - All the usual LDAP operations
+//! - Search result deserialization
+//! - Connection pooling
+//! - Streaming search with native rust [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html)s
 //!
 //!
-//! # Usage
+//! ## Usage
 //!
 //! Add this to your `Cargo.toml`:
 //! ```toml
@@ -17,6 +20,50 @@
 //! simple-ldap = "3.0.0"
 //!
 //! ```
+//!
+//! ### Example
+//!
+//! Examples of individual operations are scattered throughout the docs, but here's the basic usage:
+//!
+//! ```no_run
+//! use simple_ldap::{
+//!     LdapClient, LdapConfig,
+//!     filter::EqFilter,
+//!     ldap3::Scope
+//! };
+//! use url::Url;
+//! use serde::Deserialize;
+//!
+//! // A type for deserializing the search result into.
+//! #[derive(Debug, Deserialize)]
+//! struct User {
+//!     uid: String,
+//!     cn: String,
+//!     sn: String,
+//! }
+//!
+//!
+//! #[tokio::main]
+//! async fn main(){
+//!     let ldap_config = LdapConfig {
+//!         bind_dn: String::from("cn=manager"),
+//!         bind_password: String::from("password"),
+//!         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+//!         dn_attribute: None,
+//!         connection_settings: None
+//!     };
+//!     let mut client = LdapClient::new(ldap_config).await.unwrap();
+//!     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
+//!     let user: User = client
+//!         .search::<User>(
+//!         "ou=people,dc=example,dc=com",
+//!         Scope::OneLevel,
+//!         &name_filter,
+//!         &vec!["cn", "sn", "uid"],
+//!     ).await.unwrap();
+//! }
+//! ```
+//!
 //!
 //! ## Compile time features
 //!
@@ -26,21 +73,6 @@
 //! * `sync` - (Enabled by default) Enables synchronous support (delegates to `ldap3`'s `sync` feature)
 //! * `pool` - Enable connection pooling
 //!
-//!
-//! ## Features
-//!
-//! * [x] Authentication
-//! * [x] Search
-//! * [x] Create
-//! * [x] Update
-//! * [x] Delete
-//! * [x] Streaming Search
-//! * [x] Streaming Search Multi Valued
-//! * [x] Create Group
-//! * [x] Add Users to Group
-//! * [x] Delete Group
-//! * [x] Remove Users from Group
-//! * [x] Get Group Members
 //!
 
 use std::{
@@ -1711,3 +1743,10 @@ mod tests {
         key4: Option<String>,
     }
 }
+
+
+// Add readme examples to doctests:
+// https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#include-items-only-when-collecting-doctests
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
