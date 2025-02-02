@@ -1,29 +1,27 @@
-version: '3.9'
-
 services:
-  ldap_server:
-    hostname: ldap_server
-    image: openidentityplatform/opendj
-    ports:
-      - '1389:1389'
-      - '4444:4444'
-    environment:
-      - BASE_DN=dc=example,dc=com
-      - ROOT_USER_DN=cn=manager
-      - ROOT_PASSWORD=password
-    volumes:
-      - ./data/:/opt/opendj/import-data/
-      - ./data/:/opt/opendj/bootstrap/data/
-    networks:
-      - backend
-    healthcheck:
-      test: ["CMD-SHELL", "/opt/opendj/bin/status --bindDn cn=manager --bindPassword=password | grep 1389"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+    ldap_server:
+        hostname: ldap_server
+        image: openidentityplatform/opendj
+        ports:
+            - "1389:1389"
+            - "4444:4444"
+        environment:
+            - BASE_DN=dc=example,dc=com
+            - ROOT_USER_DN=cn=manager
+            - ROOT_PASSWORD=password
+        volumes:
+            - ./data/:/opt/opendj/import-data/
+            - ./data/:/opt/opendj/bootstrap/data/
+        networks:
+            - backend
+        healthcheck:
+            test: ["CMD-SHELL", "/opt/opendj/bin/status --bindDn cn=manager --bindPassword=password | grep 1389"]
+            interval: 5s
+            timeout: 10s
+            retries: 5
+            start_period: 30s
 
 # This might be redundant.
 networks:
-  backend:
-    external: false
+    backend:
+        external: false
