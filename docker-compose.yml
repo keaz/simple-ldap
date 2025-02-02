@@ -22,16 +22,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-  rust_test:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      ldap_server: 
-        condition: service_healthy
-    networks:
-      - backend
 
+# This might be redundant.
 networks:
   backend:
     external: false
