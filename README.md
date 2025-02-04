@@ -22,7 +22,7 @@ cargo add url serde --features serde/derive
 
 ## ⚠️ Important Note
 
-**By default this library enables the `tls` feature. If you want to use `tls-native` or `tls-rustls` you have to disable the default feature using `default-features = false` in your `Cargo.toml` file and anable the feature you want to use.**
+**By default, this library enables the `tls` feature, which is an alias for `tls-native`. If you want to use `tls-rustls`, you have to disable the default feature by using `default-features = false` in your `Cargo.toml` file, as it conflicts with `tls-native`. Then, enable the feature you want to use.**
 
 ### Example
 
@@ -67,4 +67,4 @@ async fn main(){
         &vec!["cn", "sn", "uid"],
     ).await.unwrap();
 }
-````
+```
