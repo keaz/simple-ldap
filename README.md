@@ -24,11 +24,6 @@ cargo add url serde --features serde/derive
 
 **By default this library enables the `tls` feature. If you want to use `tls-native` or `tls-rustls` you have to disable the default feature using `default-features = false` in your `Cargo.toml` file and anable the feature you want to use.**
 
-````toml
-
-```commandline
-
-
 ### Example
 
 There are plenty more examples in the [documentation](https://docs.rs/simple-ldap)!

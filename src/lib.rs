@@ -70,7 +70,6 @@
 //! * `tls` - (Enabled by default) Enables TLS support (delegates to `ldap3`'s `tls` feature)
 //! * `tls-rustls` - Enables TLS support using `rustls` (delegates to `ldap3`'s `tls-rustls` feature)
 //! * `gsasl` - Enables SASL support (delegates to `ldap3`'s `gsasl` feature)
-//! * `sync` - (Enabled by default) Enables synchronous support (delegates to `ldap3`'s `sync` feature)
 //! * `pool` - Enable connection pooling
 //!
 //!
@@ -84,7 +83,9 @@ use std::{
 use filter::{AndFilter, EqFilter, Filter};
 use futures::FutureExt;
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults}, Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream, StreamState
+    adapters::{Adapter, EntriesOnly, PagedResults},
+    Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream,
+    StreamState,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -99,7 +100,6 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
-
 /// Configuration and authentication for LDAP connection
 #[derive(Clone)]
 pub struct LdapConfig {
@@ -110,7 +110,7 @@ pub struct LdapConfig {
     pub dn_attribute: Option<String>,
     /// Low level configuration for the connection.
     /// You can probably skip it.
-    pub connection_settings: Option<LdapConnSettings>
+    pub connection_settings: Option<LdapConnSettings>,
 }
 
 ///
@@ -133,38 +133,38 @@ impl LdapClient {
     /// This performs a bind on the connection so need to worry about that.
     ///
     pub async fn new(config: LdapConfig) -> Result<Self, Error> {
-
         debug!("Creating new connection");
 
         // With or without connection settings
         let (conn, mut ldap) = match config.connection_settings {
             None => LdapConnAsync::from_url(&config.ldap_url).await,
-            Some(settings) => LdapConnAsync::from_url_with_settings(settings, &config.ldap_url).await
-        }.map_err(|ldap_err|
+            Some(settings) => {
+                LdapConnAsync::from_url_with_settings(settings, &config.ldap_url).await
+            }
+        }
+        .map_err(|ldap_err| {
             Error::Connection(
                 String::from("Failed to initialize LDAP connection."),
-                ldap_err
+                ldap_err,
             )
-        )?;
+        })?;
 
         ldap3::drive!(conn);
 
-        ldap.simple_bind(&config.bind_dn, &config.bind_password).await
-            .map_err(|ldap_err|Error::Connection(String::from("Bind failed"), ldap_err))?
+        ldap.simple_bind(&config.bind_dn, &config.bind_password)
+            .await
+            .map_err(|ldap_err| Error::Connection(String::from("Bind failed"), ldap_err))?
             .success()
-            .map_err(|ldap_err|Error::Connection(String::from("Bind failed"), ldap_err))?;
+            .map_err(|ldap_err| Error::Connection(String::from("Bind failed"), ldap_err))?;
 
-        Ok(
-            Self {
-                dn_attr: config.dn_attribute,
-                ldap
-            }
-        )
+        Ok(Self {
+            dn_attr: config.dn_attribute,
+            ldap,
+        })
     }
 }
 
 impl LdapClient {
-
     /// Returns the ldap3 client
     #[deprecated = "This abstraction leakage will be removed in a future release.
                     Use the provided methods instead. If something's missing, open an issue in github."]
@@ -188,7 +188,7 @@ impl LdapClient {
     pub async fn unbind(mut self) -> Result<(), Error> {
         match self.ldap.unbind().await {
             Ok(_) => Ok(()),
-            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error))
+            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error)),
         }
     }
 
@@ -337,7 +337,6 @@ impl LdapClient {
 
         Ok(SearchEntry::construct(record.to_owned()))
     }
-
 
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
@@ -604,7 +603,6 @@ impl LdapClient {
         Ok(entry)
     }
 
-
     ///
     /// This method is used to search multiple records from the LDAP server and results will be paginated.
     /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
@@ -794,7 +792,6 @@ impl LdapClient {
         debug!("Sucessfully created record result: {:?}", res);
         Ok(())
     }
-
 
     ///
     /// Update a record in the LDAP server. The record will be updated in the provided base DN.
@@ -1513,9 +1510,7 @@ where
     A: AsRef<[S]> + Send + Sync + 'a,
 {
     fn new(search_stream: SearchStream<'a, S, A>) -> Stream<'a, S, A> {
-        Stream {
-            search_stream,
-        }
+        Stream { search_stream }
     }
 
     async fn next_inner(&mut self) -> Result<StreamResult<SearchEntry>, Error> {
@@ -1681,8 +1676,8 @@ pub enum Error {
 mod tests {
     //! Local tests that don't need to connect to a server.
 
-    use serde::Deserialize;
     use super::*;
+    use serde::Deserialize;
 
     #[test]
     fn create_json_multi_value_test() {
@@ -1743,7 +1738,6 @@ mod tests {
         key4: Option<String>,
     }
 }
-
 
 // Add readme examples to doctests:
 // https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#include-items-only-when-collecting-doctests
