@@ -14,6 +14,7 @@ edition = "2021"
 
 [dependencies]
 deadpool = { version = "0.12.2", optional = true }
+derive_more = { version = "2.0.1", features = ["debug"] }
 futures = "0.3.31"
 ldap3 = { version = "0.11.5", default-features = false }
 serde = { version = "1.0.214", features = ["derive"] }

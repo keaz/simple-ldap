@@ -100,23 +100,28 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
+
 /// Configuration and authentication for LDAP connection
-#[derive(Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct LdapConfig {
     pub ldap_url: Url,
     /// DistinguishedName, aka the "username" to use for the connection.
     pub bind_dn: String,
+    #[debug(skip)] // We don't want to print passwords.
     pub bind_password: String,
     pub dn_attribute: Option<String>,
     /// Low level configuration for the connection.
     /// You can probably skip it.
+    #[debug(skip)] // Debug omitted, because it just doesn't implement it.
     pub connection_settings: Option<LdapConnSettings>,
 }
+
 
 ///
 /// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
+#[derive(Debug, Clone)]
 pub struct LdapClient {
     /// The internal connection handle.
     ldap: Ldap,
