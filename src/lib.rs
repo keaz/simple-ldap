@@ -14,12 +14,14 @@
 //!
 //! ## Usage
 //!
-//! Add this to your `Cargo.toml`:
-//! ```toml
-//! [dependencies]
-//! simple-ldap = "3.0.0"
+//! Adding `simple_ldap` as a dependency to your project:
 //!
+//! ```commandline
+//! cargo add simple-ldap
 //! ```
+//!
+//! Most functionalities are defined on the `LdapClient` type. Have a look at the docs.
+//!
 //!
 //! ### Example
 //!
@@ -67,11 +69,9 @@
 //!
 //! ## Compile time features
 //!
-//! * `tls` - (Enabled by default) Enables TLS support (delegates to `ldap3`'s `tls` feature)
-//! * `tls-rustls` - Enables TLS support using `rustls` (delegates to `ldap3`'s `tls-rustls` feature)
-//! * `gsasl` - Enables SASL support (delegates to `ldap3`'s `gsasl` feature)
+//! * `tls-native` - (Enabled by default) Enables TLS support using the systems native implementation.
+//! * `tls-rustls` - Enables TLS support using `rustls`. **Conflicts with `tls-native` so you need to disable default features to use this.
 //! * `pool` - Enable connection pooling
-//!
 //!
 
 use std::{

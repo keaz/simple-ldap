@@ -6,7 +6,7 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "4.0.0"
+version = "5.0.0"
 edition = "2021"
 
 
@@ -33,9 +33,7 @@ tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.12.1", features = ["v4"] }
 
 [features]
-default = ["tls"]
-tls = ["ldap3/tls"]
+default = ["tls-native"]
 tls-native = ["ldap3/tls-native"]
 tls-rustls = ["ldap3/tls-rustls"]
-gssapi = ["ldap3/gssapi"]
 pool = ["dep:deadpool"]
