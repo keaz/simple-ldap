@@ -1,7 +1,7 @@
-/// # Filter
-///
-/// This module contains the implementation of the LDAP filter.
-///
+//! # Filter
+//!
+//! This module contains the implementation of the LDAP filter.
+//!
 
 /// The `Filter` trait is implemented by all the filters.
 pub trait Filter: Send {

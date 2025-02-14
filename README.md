@@ -6,6 +6,7 @@ A ldap client library that wraps [ldap3](https://github.com/inejge/ldap3) to mak
 [![Crates.io](https://img.shields.io/crates/v/simple-ldap)](https://crates.io/crates/simple-ldap)
 [![Documentation](https://docs.rs/simple-ldap/badge.svg)](https://docs.rs/simple-ldap)
 
+
 ## Usage
 
 Adding `simple_ldap` as a dependency to your project:
@@ -20,9 +21,6 @@ Other useful pieces you'll likely need:
 cargo add url serde --features serde/derive
 ```
 
-## ⚠️ Important Note
-
-**By default, this library enables the `tls` feature, which is an alias for `tls-native`. If you want to use `tls-rustls`, you have to disable the default feature by using `default-features = false` in your `Cargo.toml` file, as it conflicts with `tls-native`. Then, enable the feature you want to use.**
 
 ### Example
 

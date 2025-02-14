@@ -14,7 +14,7 @@ jobs:
         image: openidentityplatform/opendj
         ports:
           - 1389:1389
-        options: > 
+        options: >
           --env ROOT_USER_DN="cn=manager"
 
     steps:
@@ -47,6 +47,22 @@ jobs:
       # Step 5: Run unit tests
       - name: Run tests
         run: cargo test --verbose
+
+      # Check that there are no SemVer violations before releasing.
+      # https://github.com/obi1kenobi/cargo-semver-checks
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: default-features
+          features: pool
+
+      # Another check with the mutually exclusive tls-rustls feature enabled.
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: only-explicit-features
+          features: tls-rustls,pool
+
 
       - name: Deploy to crates.io
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

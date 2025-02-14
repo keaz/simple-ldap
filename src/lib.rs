@@ -14,12 +14,14 @@
 //!
 //! ## Usage
 //!
-//! Add this to your `Cargo.toml`:
-//! ```toml
-//! [dependencies]
-//! simple-ldap = "3.0.0"
+//! Adding `simple_ldap` as a dependency to your project:
 //!
+//! ```commandline
+//! cargo add simple-ldap
 //! ```
+//!
+//! Most functionalities are defined on the `LdapClient` type. Have a look at the docs.
+//!
 //!
 //! ### Example
 //!
@@ -67,11 +69,9 @@
 //!
 //! ## Compile time features
 //!
-//! * `tls` - (Enabled by default) Enables TLS support (delegates to `ldap3`'s `tls` feature)
-//! * `tls-rustls` - Enables TLS support using `rustls` (delegates to `ldap3`'s `tls-rustls` feature)
-//! * `gsasl` - Enables SASL support (delegates to `ldap3`'s `gsasl` feature)
+//! * `tls-native` - (Enabled by default) Enables TLS support using the systems native implementation.
+//! * `tls-rustls` - Enables TLS support using `rustls`. **Conflicts with `tls-native` so you need to disable default features to use this.
 //! * `pool` - Enable connection pooling
-//!
 //!
 
 use std::{
@@ -100,23 +100,28 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
+
 /// Configuration and authentication for LDAP connection
-#[derive(Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct LdapConfig {
     pub ldap_url: Url,
     /// DistinguishedName, aka the "username" to use for the connection.
     pub bind_dn: String,
+    #[debug(skip)] // We don't want to print passwords.
     pub bind_password: String,
     pub dn_attribute: Option<String>,
     /// Low level configuration for the connection.
     /// You can probably skip it.
+    #[debug(skip)] // Debug omitted, because it just doesn't implement it.
     pub connection_settings: Option<LdapConnSettings>,
 }
+
 
 ///
 /// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
+#[derive(Debug, Clone)]
 pub struct LdapClient {
     /// The internal connection handle.
     ldap: Ldap,
