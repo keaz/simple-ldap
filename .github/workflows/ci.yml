@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - '*'
-      - '!main'
 
 jobs:
   build:
@@ -15,7 +14,7 @@ jobs:
         image: openidentityplatform/opendj
         ports:
           - 1389:1389
-        options: > 
+        options: >
           --env ROOT_USER_DN="cn=manager"
 
 

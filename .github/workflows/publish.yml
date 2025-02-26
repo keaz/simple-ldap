@@ -2,8 +2,12 @@ name: Publish to crates.io
 
 on:
   push:
-    branches:
-      - 'main'
+    tags:
+      # Only on SemVer tags like "7.3.0".
+      # Push a new tag to make a new release.
+      # It should match the version in Cargo.toml
+      # (Perhaps we could add a check for this?)
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
   build:
