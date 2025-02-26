@@ -96,7 +96,7 @@ pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(mut clien
             &vec!["cn", "sn", "uid"],
         )
         .await;
-    assert!(user.is_ok());
+
     let user = user.unwrap();
     assert_eq!(user.cn, "Sam");
     assert_eq!(user.sn, "Smith");

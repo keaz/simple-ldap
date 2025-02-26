@@ -7,7 +7,7 @@
 //! ## Features
 //!
 //! - All the usual LDAP operations
-//! - Search result deserialization
+//! - Search result [deserialization](#deserialization)
 //! - Connection pooling
 //! - Streaming search with native rust [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html)s
 //!
@@ -20,7 +20,7 @@
 //! cargo add simple-ldap
 //! ```
 //!
-//! Most functionalities are defined on the `LdapClient` type. Have a look at the docs.
+//! Most functionalities are defined on the [LdapClient] type. Have a look at the docs.
 //!
 //!
 //! ### Example
@@ -67,17 +67,55 @@
 //! ```
 //!
 //!
+//! ### Deserialization
+//!
+//! Search results are deserialized into user provided types using [`serde`](https://serde.rs/).
+//! Define a type that reflects the expected results of your search, and derive `Deserialize` for it. For example:
+//!
+//! ```
+//! use serde::Deserialize;
+//!
+//! // A type for deserializing the search result into.
+//! #[derive(Debug, Deserialize)]
+//! struct User {
+//!     // DN is always returned as single value string, whether you ask it or not.
+//!     dn: String,
+//!     cn: String,
+//!     // LDAP and Rust naming conventions differ.
+//!     // You can make up for the difference by using `serde`'s renaming annotations.
+//!     #[serde(rename = "mayNotExist")]
+//!     may_not_exist: Option<String>,
+//!     multivalued_attribute: Vec<String>
+//! }
+//! ```
+//!
+//! Take care to actually request for all the attribute fields in the search.
+//! Otherwise they won't be returned, and the deserialization will fail (unless you used an `Option`).
+//!
+//!
+//! #### String attributes
+//!
+//! Most attributes are returned as strings. You can deserialize them into just Strings, but also into
+//! anything else that can supports deserialization from a string. E.g. perhaps the string represents a
+//! timestamp, and you can deserialize it directly into [`chrono::DateTime`](https://docs.rs/chrono/latest/chrono/struct.DateTime.html).
+//!
+//!
+//! #### Binary attributes
+//!
+//! Some attributes may be binary encoded. (Active Directory especially has a bad habit of using these.)
+//! You can just capture the bytes directly into a `Vec<u8>`, but you can also use a type that knows how to
+//! deserialize from bytes. E.g. [`uuid::Uuid`](https://docs.rs/uuid/latest/uuid/struct.Uuid.html)
+//!
+//!
 //! ## Compile time features
 //!
 //! * `tls-native` - (Enabled by default) Enables TLS support using the systems native implementation.
-//! * `tls-rustls` - Enables TLS support using `rustls`. **Conflicts with `tls-native` so you need to disable default features to use this.
+//! * `tls-rustls` - Enables TLS support using `rustls`. **Conflicts with `tls-native` so you need to disable default features to use this.**
 //! * `pool` - Enable connection pooling
 //!
 
 use std::{
-    collections::{HashMap, HashSet},
-    pin::Pin,
-    task::{Context, Poll},
+    collections::{HashMap, HashSet}, iter, pin::Pin, task::{Context, Poll}
 };
 
 use filter::{AndFilter, EqFilter, Filter};
@@ -87,9 +125,10 @@ use ldap3::{
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream,
     StreamState,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_value::Value;
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, instrument, warn, Level};
 use url::Url;
 
 pub mod filter;
@@ -135,7 +174,7 @@ impl LdapClient {
     ///
     /// # Bind
     ///
-    /// This performs a bind on the connection so need to worry about that.
+    /// This performs a simple bind on the connection so need to worry about that.
     ///
     pub async fn new(config: LdapConfig) -> Result<Self, Error> {
         debug!("Creating new connection");
@@ -343,11 +382,13 @@ impl LdapClient {
         Ok(SearchEntry::construct(record.to_owned()))
     }
 
+
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
-    /// This operatrion is useful when records has single value attributes.
-    /// Result will be mapped to a struct of type T.
+    /// This operation will treat all the attributes as single-valued, silently ignoring the possible extra
+    /// values.
+    ///
     ///
     /// # Arguments
     ///
@@ -484,6 +525,7 @@ impl LdapClient {
         to_multi_value(search_entry)
     }
 
+
     async fn streaming_search_inner<'a>(
         &mut self,
         base: &'a str,
@@ -507,6 +549,7 @@ impl LdapClient {
         let stream = Stream::new(search_stream);
         Ok(stream)
     }
+
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
@@ -607,6 +650,7 @@ impl LdapClient {
 
         Ok(entry)
     }
+
 
     ///
     /// This method is used to search multiple records from the LDAP server and results will be paginated.
@@ -725,6 +769,7 @@ impl LdapClient {
         let stream = Stream::new(search_stream);
         Ok(stream)
     }
+
 
     ///
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
@@ -1439,20 +1484,68 @@ impl LdapClient {
     }
 }
 
+
+/// A proxy type for deriving `Serialize` for `ldap3::SearchEntry`.
+/// https://serde.rs/remote-derive.html
+#[derive(Serialize)]
+#[serde(remote = "ldap3::SearchEntry")]
+struct Ldap3SearchEntry {
+    /// Entry DN.
+    pub dn: String,
+    /// Attributes.
+    /// Flattening to ease up the serialization step.
+    #[serde(flatten)]
+    pub attrs: HashMap<String, Vec<String>>,
+    /// Binary-valued attributes.
+    /// Flattening to ease up the serialization step.
+    #[serde(flatten)]
+    pub bin_attrs: HashMap<String, Vec<Vec<u8>>>,
+}
+
+
+/// This is needed for invoking the deserialize impl directly.
+/// https://serde.rs/remote-derive.html#invoking-the-remote-impl-directly
+#[derive(Serialize)]
+#[serde(transparent)]
+struct SerializeWrapper(#[serde(with = "Ldap3SearchEntry")] ldap3::SearchEntry);
+
+
+// Allowing users to debug serialization issues from the logs.
+#[instrument(level = Level::DEBUG)]
 fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
-    let result: HashMap<&str, serde_value::Value> = search_entry
+    let string_attributes = search_entry
         .attrs
-        .iter()
+        .into_iter()
         .filter(|(_, value)| !value.is_empty())
-        .map(|(arrta, value)| (arrta.as_str(), map_to_single_value(value.first())))
+        .map(|(arrta, value)| {
+            if value.len() > 1 {
+                warn!("Treating multivalued attribute {arrta} as singlevalued.")
+            }
+            (Value::String(arrta), map_to_single_value(value.first()))
+        });
+
+    let binary_attributes = search_entry.bin_attrs
+        .into_iter()
+        // I wonder if it's possible to have empties here..?
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(arrta, value)| {
+            if value.len() > 1 {
+                warn!("Treating multivalued attribute {arrta} as singlevalued.")
+            }
+            (Value::String(arrta), map_to_single_value_bin(value.first().cloned()))
+        });
+
+    // DN is always returned.
+    // Adding it to the serialized fields as well.
+    let dn_iter = iter::once(search_entry.dn)
+        .map(|dn| (Value::String(String::from("dn")), Value::String(dn)));
+
+    let all_fields = string_attributes
+        .chain(binary_attributes)
+        .chain(dn_iter)
         .collect();
 
-    let value = serde_value::Value::Map(
-        result
-            .into_iter()
-            .map(|(k, v)| (serde_value::Value::String(k.to_string()), v))
-            .collect(),
-    );
+    let value = serde_value::Value::Map(all_fields);
 
     Ok(T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
@@ -1462,20 +1555,14 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
     })?)
 }
 
+
+// Allowing users to debug serialization issues from the logs.
+#[instrument(level = Level::DEBUG)]
 fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
-    let result: HashMap<&str, serde_value::Value> = search_entry
-        .attrs
-        .iter()
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(arrta, value)| (arrta.as_str(), map_to_multi_value(value)))
-        .collect();
-
-    let value = serde_value::Value::Map(
-        result
-            .into_iter()
-            .map(|(k, v)| (serde_value::Value::String(k.to_string()), v))
-            .collect(),
-    );
+    let value = serde_value::to_value(SerializeWrapper(search_entry))
+        .map_err(|err| {
+            Error::Mapping(format!("Error converting search result to object, {:?}", err))
+        })?;
 
     Ok(T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
@@ -1484,6 +1571,7 @@ fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Resu
         ))
     })?)
 }
+
 
 fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
     match attra_value {
@@ -1492,14 +1580,19 @@ fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
     }
 }
 
-fn map_to_multi_value(attra_value: &Vec<String>) -> serde_value::Value {
-    serde_value::Value::Seq(
-        attra_value
-            .iter()
-            .map(|value| serde_value::Value::String(value.to_string()))
-            .collect(),
-    )
+
+fn map_to_single_value_bin(attra_values: Option<Vec<u8>>) -> serde_value::Value {
+    match attra_values {
+        Some(bytes) => {
+            let value_bytes  = bytes.into_iter()
+                .map(|byte| Value::U8(byte)).collect();
+
+            serde_value::Value::Seq(value_bytes)
+        },
+        None => serde_value::Value::Option(Option::None),
+    }
 }
+
 
 /// The Stream struct is used to iterate through the search results.
 /// The stream will return a Record object. The Record object can be used to map the search result to a struct.
@@ -1683,9 +1776,11 @@ mod tests {
 
     use super::*;
     use serde::Deserialize;
+    use uuid::Uuid;
+    use anyhow::anyhow;
 
     #[test]
-    fn create_json_multi_value_test() {
+    fn create_multi_value_test() {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
         map.insert(
             "key1".to_string(),
@@ -1695,52 +1790,144 @@ mod tests {
             "key2".to_string(),
             vec!["value3".to_string(), "value4".to_string()],
         );
+
+        let dn = "CN=Thing,OU=Unit,DC=example,DC=org";
         let entry = SearchEntry {
-            dn: "dn".to_string(),
+            dn: dn.to_string(),
             attrs: map,
             bin_attrs: HashMap::new(),
         };
 
         let test = to_multi_value::<TestMultiValued>(entry);
-        assert!(test.is_ok());
+
         let test = test.unwrap();
         assert_eq!(test.key1, vec!["value1".to_string(), "value2".to_string()]);
         assert_eq!(test.key2, vec!["value3".to_string(), "value4".to_string()]);
+        assert_eq!(test.dn, dn);
     }
 
+
     #[test]
-    fn create_json_single_value_test() {
+    fn create_single_value_test() {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
         map.insert("key1".to_string(), vec!["value1".to_string()]);
         map.insert("key2".to_string(), vec!["value2".to_string()]);
         map.insert("key4".to_string(), vec!["value4".to_string()]);
+
+        let dn = "CN=Thing,OU=Unit,DC=example,DC=org";
+
         let entry = SearchEntry {
-            dn: "dn".to_string(),
+            dn: dn.to_string(),
             attrs: map,
             bin_attrs: HashMap::new(),
         };
 
         let test = to_signle_value::<TestSingleValued>(entry);
-        assert!(test.is_ok());
+
         let test = test.unwrap();
         assert_eq!(test.key1, "value1".to_string());
         assert_eq!(test.key2, "value2".to_string());
         assert!(test.key3.is_none());
         assert_eq!(test.key4.unwrap(), "value4".to_string());
+        assert_eq!(test.dn, dn);
     }
 
     #[derive(Debug, Deserialize)]
     struct TestMultiValued {
+        dn: String,
         key1: Vec<String>,
         key2: Vec<String>,
     }
 
     #[derive(Debug, Deserialize)]
     struct TestSingleValued {
+        dn: String,
         key1: String,
         key2: String,
         key3: Option<String>,
         key4: Option<String>,
+    }
+
+
+
+
+
+    /// Get the binary and hyphenated string representations of an UUID for testing.
+    fn get_binary_uuid() -> (Vec<u8>, String) {
+        // Exaple grabbed from uuid docs:
+        // https://docs.rs/uuid/latest/uuid/struct.Uuid.html#method.from_bytes
+        let bytes = vec![
+            0xa1, 0xa2, 0xa3, 0xa4,
+            0xb1, 0xb2,
+            0xc1, 0xc2,
+            0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8,
+        ];
+
+        let correct_string_representation = String::from("a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8");
+
+        (bytes, correct_string_representation)
+    }
+
+
+    #[test]
+    fn deserialize_binary_multi_value_test() -> anyhow::Result<()> {
+        #[derive(Deserialize)]
+        struct TestMultivalueBinary {
+            pub uuids: Vec<Uuid>
+        }
+
+
+        let (bytes, correct_string_representation) = get_binary_uuid();
+
+        let entry = SearchEntry {
+            dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
+            attrs: HashMap::new(),
+            bin_attrs: HashMap::from([(String::from("uuids"), vec![bytes])]),
+        };
+
+        let record = Record {
+            search_entry: entry
+        };
+
+
+        let deserialized: TestMultivalueBinary = record.to_multi_valued_record_()?;
+
+        match deserialized.uuids.as_slice() {
+            [one] => {
+                let string_uuid = one.hyphenated().to_string();
+                assert_eq!(string_uuid, correct_string_representation);
+                Ok(())
+            },
+            [..] => Err(anyhow!("There was supposed to be exactly one uuid."))
+        }
+    }
+
+
+    #[test]
+    fn deserialize_binary_single_value_test() -> anyhow::Result<()> {
+        #[derive(Deserialize)]
+        struct TestSingleValueBinary {
+            pub uuid: Uuid
+        }
+
+        let (bytes, correct_string_representation) = get_binary_uuid();
+
+        let entry = SearchEntry {
+            dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
+            attrs: HashMap::new(),
+            bin_attrs: HashMap::from([(String::from("uuid"), vec![bytes])]),
+        };
+
+        let record = Record {
+            search_entry: entry
+        };
+
+        let deserialized: TestSingleValueBinary = record.to_record()?;
+
+        let string_uuid = deserialized.uuid.hyphenated().to_string();
+        assert_eq!(string_uuid, correct_string_representation);
+
+        Ok(())
     }
 }
 
