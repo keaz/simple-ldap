@@ -82,7 +82,7 @@
 //!     dn: String,
 //!     cn: String,
 //!     // LDAP and Rust naming conventions differ.
-//!     // You can make up for the difference by using `serde`'s renaming annotations.
+//!     // You can make up for the difference by using serde's renaming annotations.
 //!     #[serde(rename = "mayNotExist")]
 //!     may_not_exist: Option<String>,
 //!     multivalued_attribute: Vec<String>
