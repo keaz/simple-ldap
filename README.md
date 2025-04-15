@@ -6,7 +6,6 @@ A ldap client library that wraps [ldap3](https://github.com/inejge/ldap3) to mak
 [![Crates.io](https://img.shields.io/crates/v/simple-ldap)](https://crates.io/crates/simple-ldap)
 [![Documentation](https://docs.rs/simple-ldap/badge.svg)](https://docs.rs/simple-ldap)
 
-
 ## Usage
 
 Adding `simple_ldap` as a dependency to your project:
@@ -20,7 +19,6 @@ Other useful pieces you'll likely need:
 ```commandline
 cargo add url serde --features serde/derive
 ```
-
 
 ### Example
 
@@ -36,13 +34,18 @@ use simple_ldap::{
 };
 use url::Url;
 use serde::Deserialize;
+use serde_with::serde_as;
+use serde_with::OneOrMany;
 
 // A type for deserializing the search result into.
+#[serde_as] // serde_with for multiple values
 #[derive(Debug, Deserialize)]
 struct User {
     uid: String,
     cn: String,
     sn: String,
+    #[serde_as(as = "OneOrMany<_>")]
+    addresses: Vec<String>,
 }
 
 

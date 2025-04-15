@@ -107,6 +107,12 @@
 //! deserialize from bytes. E.g. [`uuid::Uuid`](https://docs.rs/uuid/latest/uuid/struct.Uuid.html)
 //!
 //!
+//! #### Multi-valued attributes
+//!
+//! Multi-valued attributes should be marked as #[serde_as(as = "OneOrMany<_>")] using `serde_with`. Currently, there is a limitation when handing
+//! binary attributes. This will be fixed in the future. As a workaround, you can use `search_multi_valued` or `Record::to_multi_valued_record_`.
+//! To use those method all the attributes should be multi-valued.
+//!
 //! ## Compile time features
 //!
 //! * `tls-native` - (Enabled by default) Enables TLS support using the systems native implementation.
@@ -453,7 +459,7 @@ impl LdapClient {
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
         let search_entry = self.search_innter(base, scope, filter, attributes).await?;
-        to_signle_value(search_entry)
+        to_value(search_entry)
     }
 
     ///
@@ -1792,6 +1798,10 @@ impl Record {
         to_value(self.search_entry)
     }
 
+    #[deprecated(
+        since = "6.0.0",
+        note = "Use to_record instead. This method is deprecated and will be removed in future versions."
+    )]
     pub fn to_multi_valued_record_<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
         to_multi_value(self.search_entry)
     }
