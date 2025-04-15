@@ -6,7 +6,7 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "5.1.0"
+version = "6.0.0"
 edition = "2021"
 
 
@@ -17,9 +17,10 @@ deadpool = { version = "0.12.2", optional = true }
 derive_more = { version = "2.0.1", features = ["debug"] }
 futures = "0.3.31"
 ldap3 = { version = "0.11.5", default-features = false }
-serde = { version = "1.0.214", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde-value = "0.7.0"
-thiserror = "2.0.11"
+serde_with = "3.12.0"
+thiserror = "2.0.12"
 tracing = "0.1.41"
 url = "2.5.4"
 
@@ -27,11 +28,11 @@ url = "2.5.4"
 # This little hack is needed for enabling optional features during testing.
 # https://github.com/rust-lang/cargo/issues/2911#issuecomment-749580481
 simple-ldap = { path = ".", features = ["pool"] }
-anyhow = "1.0.95"
+anyhow = "1.0.98"
 rand = "0.9.0"
-tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 # v4 is random uids.
-uuid = { version = "1.12.1", features = ["v4", "serde"] }
+uuid = { version = "1.16.0", features = ["v4", "serde"] }
 
 [features]
 default = ["tls-native"]

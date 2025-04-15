@@ -115,7 +115,10 @@
 //!
 
 use std::{
-    collections::{HashMap, HashSet}, iter, pin::Pin, task::{Context, Poll}
+    collections::{HashMap, HashSet},
+    iter,
+    pin::Pin,
+    task::{Context, Poll},
 };
 
 use filter::{AndFilter, EqFilter, Filter};
@@ -139,7 +142,6 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
-
 /// Configuration and authentication for LDAP connection
 #[derive(derive_more::Debug, Clone)]
 pub struct LdapConfig {
@@ -154,7 +156,6 @@ pub struct LdapConfig {
     #[debug(skip)] // Debug omitted, because it just doesn't implement it.
     pub connection_settings: Option<LdapConnSettings>,
 }
-
 
 ///
 /// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
@@ -382,7 +383,6 @@ impl LdapClient {
         Ok(SearchEntry::construct(record.to_owned()))
     }
 
-
     ///
     /// Search a single value from the LDAP server. The search is performed using the provided filter.
     /// The filter should be a filter that matches a single record. if the filter matches multiple users, an error is returned.
@@ -525,7 +525,6 @@ impl LdapClient {
         to_multi_value(search_entry)
     }
 
-
     async fn streaming_search_inner<'a>(
         &mut self,
         base: &'a str,
@@ -549,7 +548,6 @@ impl LdapClient {
         let stream = Stream::new(search_stream);
         Ok(stream)
     }
-
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
@@ -650,7 +648,6 @@ impl LdapClient {
 
         Ok(entry)
     }
-
 
     ///
     /// This method is used to search multiple records from the LDAP server and results will be paginated.
@@ -769,7 +766,6 @@ impl LdapClient {
         let stream = Stream::new(search_stream);
         Ok(stream)
     }
-
 
     ///
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
@@ -1484,7 +1480,6 @@ impl LdapClient {
     }
 }
 
-
 /// A proxy type for deriving `Serialize` for `ldap3::SearchEntry`.
 /// https://serde.rs/remote-derive.html
 #[derive(Serialize)]
@@ -1502,13 +1497,11 @@ struct Ldap3SearchEntry {
     pub bin_attrs: HashMap<String, Vec<Vec<u8>>>,
 }
 
-
 /// This is needed for invoking the deserialize impl directly.
 /// https://serde.rs/remote-derive.html#invoking-the-remote-impl-directly
 #[derive(Serialize)]
 #[serde(transparent)]
 struct SerializeWrapper(#[serde(with = "Ldap3SearchEntry")] ldap3::SearchEntry);
-
 
 // Allowing users to debug serialization issues from the logs.
 #[instrument(level = Level::DEBUG)]
@@ -1524,7 +1517,8 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
             (Value::String(arrta), map_to_single_value(value.first()))
         });
 
-    let binary_attributes = search_entry.bin_attrs
+    let binary_attributes = search_entry
+        .bin_attrs
         .into_iter()
         // I wonder if it's possible to have empties here..?
         .filter(|(_, value)| !value.is_empty())
@@ -1532,7 +1526,10 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
             if value.len() > 1 {
                 warn!("Treating multivalued attribute {arrta} as singlevalued.")
             }
-            (Value::String(arrta), map_to_single_value_bin(value.first().cloned()))
+            (
+                Value::String(arrta),
+                map_to_single_value_bin(value.first().cloned()),
+            )
         });
 
     // DN is always returned.
@@ -1555,14 +1552,53 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
     })?)
 }
 
-
-// Allowing users to debug serialization issues from the logs.
 #[instrument(level = Level::DEBUG)]
-fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
-    let value = serde_value::to_value(SerializeWrapper(search_entry))
-        .map_err(|err| {
-            Error::Mapping(format!("Error converting search result to object, {:?}", err))
-        })?;
+fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
+    let string_attributes = search_entry
+        .attrs
+        .into_iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(arrta, value)| {
+            if value.len() == 1 {
+                return (Value::String(arrta), map_to_single_value(value.first()));
+            }
+            (Value::String(arrta), map_to_multi_value(value))
+        });
+
+    let binary_attributes = search_entry
+        .bin_attrs
+        .into_iter()
+        // I wonder if it's possible to have empties here..?
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(arrta, value)| {
+            if value.len() > 1 {
+                //#TODO: This is a bit of a hack to get multi-valued attributes to work for non binary values. SHOULD fix this.
+                warn!("Treating multivalued attribute {arrta} as singlevalued.")
+            }
+            (
+                Value::String(arrta),
+                map_to_single_value_bin(value.first().cloned()),
+            )
+            // if value.len() == 1 {
+            //     return (
+            //         Value::String(arrta),
+            //         map_to_single_value_bin(value.first().cloned()),
+            //     );
+            // }
+            // (Value::String(arrta), map_to_multi_value_bin(value))
+        });
+
+    // DN is always returned.
+    // Adding it to the serialized fields as well.
+    let dn_iter = iter::once(search_entry.dn)
+        .map(|dn| (Value::String(String::from("dn")), Value::String(dn)));
+
+    let all_fields = string_attributes
+        .chain(binary_attributes)
+        .chain(dn_iter)
+        .collect();
+
+    let value = serde_value::Value::Map(all_fields);
 
     Ok(T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
@@ -1572,6 +1608,47 @@ fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Resu
     })?)
 }
 
+fn map_to_multi_value(attra_value: Vec<String>) -> serde_value::Value {
+    serde_value::Value::Seq(
+        attra_value
+            .iter()
+            .map(|value| serde_value::Value::String(value.to_string()))
+            .collect(),
+    )
+}
+
+fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
+    let value_bytes = attra_values
+        .iter()
+        .map(|value| {
+            value
+                .iter()
+                .map(|byte| Value::U8(*byte))
+                .collect::<Vec<Value>>()
+        })
+        .map(|bytes| serde_value::Value::Seq(bytes))
+        .collect::<Vec<Value>>();
+
+    serde_value::Value::Seq(value_bytes)
+}
+
+// Allowing users to debug serialization issues from the logs.
+#[instrument(level = Level::DEBUG)]
+fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
+    let value = serde_value::to_value(SerializeWrapper(search_entry)).map_err(|err| {
+        Error::Mapping(format!(
+            "Error converting search result to object, {:?}",
+            err
+        ))
+    })?;
+
+    Ok(T::deserialize(value).map_err(|err| {
+        Error::Mapping(format!(
+            "Error converting search result to object, {:?}",
+            err
+        ))
+    })?)
+}
 
 fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
     match attra_value {
@@ -1580,19 +1657,16 @@ fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
     }
 }
 
-
 fn map_to_single_value_bin(attra_values: Option<Vec<u8>>) -> serde_value::Value {
     match attra_values {
         Some(bytes) => {
-            let value_bytes  = bytes.into_iter()
-                .map(|byte| Value::U8(byte)).collect();
+            let value_bytes = bytes.into_iter().map(|byte| Value::U8(byte)).collect();
 
             serde_value::Value::Seq(value_bytes)
-        },
+        }
         None => serde_value::Value::Option(Option::None),
     }
 }
-
 
 /// The Stream struct is used to iterate through the search results.
 /// The stream will return a Record object. The Record object can be used to map the search result to a struct.
@@ -1715,7 +1789,7 @@ impl Record {
     // This is kind of missnomer, as we aren't creating records here.
     // Perhaps something like "deserialize" would fit better?
     pub fn to_record<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
-        to_signle_value(self.search_entry)
+        to_value(self.search_entry)
     }
 
     pub fn to_multi_valued_record_<T: for<'b> serde::Deserialize<'b>>(self) -> Result<T, Error> {
@@ -1775,9 +1849,11 @@ mod tests {
     //! Local tests that don't need to connect to a server.
 
     use super::*;
-    use serde::Deserialize;
-    use uuid::Uuid;
     use anyhow::anyhow;
+    use serde::Deserialize;
+    use serde_with::serde_as;
+    use serde_with::OneOrMany;
+    use uuid::Uuid;
 
     #[test]
     fn create_multi_value_test() {
@@ -1806,7 +1882,6 @@ mod tests {
         assert_eq!(test.dn, dn);
     }
 
-
     #[test]
     fn create_single_value_test() {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
@@ -1832,6 +1907,92 @@ mod tests {
         assert_eq!(test.dn, dn);
     }
 
+    #[test]
+    fn create_to_value_string_test() {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+        map.insert("key1".to_string(), vec!["value1".to_string()]);
+        map.insert("key2".to_string(), vec!["value2".to_string()]);
+        map.insert("key4".to_string(), vec!["value4".to_string()]);
+        map.insert(
+            "key5".to_string(),
+            vec!["value5".to_string(), "value6".to_string()],
+        );
+
+        let dn = "CN=Thing,OU=Unit,DC=example,DC=org";
+
+        let entry = SearchEntry {
+            dn: dn.to_string(),
+            attrs: map,
+            bin_attrs: HashMap::new(),
+        };
+
+        let test = to_value::<TestValued>(entry);
+
+        let test = test.unwrap();
+        assert_eq!(test.key1, "value1".to_string());
+        assert!(test.key3.is_none());
+        let key4 = test.key4;
+        assert_eq!(key4[0], "value4".to_string());
+        let key5 = test.key5;
+        assert_eq!(key5[0], "value5".to_string());
+        assert_eq!(key5[1], "value6".to_string());
+
+        assert_eq!(test.dn, dn);
+    }
+
+    #[test]
+    fn binary_single_to_value_test() -> anyhow::Result<()> {
+        #[derive(Deserialize)]
+        struct TestMultivalueBinary {
+            pub uuids: Uuid,
+            pub key1: String,
+        }
+
+        let (bytes, correct_string_representation) = get_binary_uuid();
+
+        let entry = SearchEntry {
+            dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
+            attrs: HashMap::from([(String::from("key1"), vec![String::from("value1")])]),
+            bin_attrs: HashMap::from([(String::from("uuids"), vec![bytes])]),
+        };
+
+        let test = to_value::<TestMultivalueBinary>(entry).unwrap();
+
+        let string_uuid = test.uuids.hyphenated().to_string();
+        assert_eq!(string_uuid, correct_string_representation);
+        Ok(())
+    }
+
+    // #[test] // This test is not working, because the OneOrMany trait is not implemented for Uuid. Will fix this later.
+    fn binary_multi_to_value_test() -> anyhow::Result<()> {
+        #[serde_as]
+        #[derive(Deserialize)]
+        struct TestMultivalueBinary {
+            #[serde_as(as = "OneOrMany<_>")]
+            pub uuids: Vec<Uuid>,
+            pub key1: String,
+        }
+
+        let (bytes, correct_string_representation) = get_binary_uuid();
+
+        let entry = SearchEntry {
+            dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
+            attrs: HashMap::from([(String::from("key1"), vec![String::from("value1")])]),
+            bin_attrs: HashMap::from([(String::from("uuids"), vec![bytes])]),
+        };
+
+        let test = to_value::<TestMultivalueBinary>(entry).unwrap();
+
+        match test.uuids.as_slice() {
+            [one] => {
+                let string_uuid = one.hyphenated().to_string();
+                assert_eq!(string_uuid, correct_string_representation);
+                Ok(())
+            }
+            [..] => Err(anyhow!("There was supposed to be exactly one uuid.")),
+        }
+    }
+
     #[derive(Debug, Deserialize)]
     struct TestMultiValued {
         dn: String,
@@ -1848,19 +2009,24 @@ mod tests {
         key4: Option<String>,
     }
 
-
-
-
-
+    #[serde_as]
+    #[derive(Debug, Deserialize)]
+    struct TestValued {
+        dn: String,
+        key1: String,
+        key3: Option<String>,
+        #[serde_as(as = "OneOrMany<_>")]
+        key4: Vec<String>,
+        #[serde_as(as = "OneOrMany<_>")]
+        key5: Vec<String>,
+    }
     /// Get the binary and hyphenated string representations of an UUID for testing.
     fn get_binary_uuid() -> (Vec<u8>, String) {
         // Exaple grabbed from uuid docs:
         // https://docs.rs/uuid/latest/uuid/struct.Uuid.html#method.from_bytes
         let bytes = vec![
-            0xa1, 0xa2, 0xa3, 0xa4,
-            0xb1, 0xb2,
-            0xc1, 0xc2,
-            0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8,
+            0xa1, 0xa2, 0xa3, 0xa4, 0xb1, 0xb2, 0xc1, 0xc2, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6,
+            0xd7, 0xd8,
         ];
 
         let correct_string_representation = String::from("a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8");
@@ -1868,14 +2034,12 @@ mod tests {
         (bytes, correct_string_representation)
     }
 
-
     #[test]
     fn deserialize_binary_multi_value_test() -> anyhow::Result<()> {
         #[derive(Deserialize)]
         struct TestMultivalueBinary {
-            pub uuids: Vec<Uuid>
+            pub uuids: Vec<Uuid>,
         }
-
 
         let (bytes, correct_string_representation) = get_binary_uuid();
 
@@ -1886,9 +2050,8 @@ mod tests {
         };
 
         let record = Record {
-            search_entry: entry
+            search_entry: entry,
         };
-
 
         let deserialized: TestMultivalueBinary = record.to_multi_valued_record_()?;
 
@@ -1897,17 +2060,16 @@ mod tests {
                 let string_uuid = one.hyphenated().to_string();
                 assert_eq!(string_uuid, correct_string_representation);
                 Ok(())
-            },
-            [..] => Err(anyhow!("There was supposed to be exactly one uuid."))
+            }
+            [..] => Err(anyhow!("There was supposed to be exactly one uuid.")),
         }
     }
-
 
     #[test]
     fn deserialize_binary_single_value_test() -> anyhow::Result<()> {
         #[derive(Deserialize)]
         struct TestSingleValueBinary {
-            pub uuid: Uuid
+            pub uuid: Uuid,
         }
 
         let (bytes, correct_string_representation) = get_binary_uuid();
@@ -1919,7 +2081,7 @@ mod tests {
         };
 
         let record = Record {
-            search_entry: entry
+            search_entry: entry,
         };
 
         let deserialized: TestSingleValueBinary = record.to_record()?;
