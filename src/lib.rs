@@ -127,8 +127,8 @@ use std::{
     task::{Context, Poll},
 };
 
-use filter::{AndFilter, EqFilter, Filter};
-use futures::FutureExt;
+use filter::{AndFilter, EqFilter, Filter, OrFilter};
+use futures::{FutureExt, StreamExt};
 use ldap3::{
     adapters::{Adapter, EntriesOnly, PagedResults},
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream,
@@ -1282,28 +1282,47 @@ impl LdapClient {
 
         let record = records.first().unwrap();
 
-        let x = SearchEntry::construct(record.to_owned());
-        let result: HashMap<&str, Vec<String>> = x
+        let mut or_filter = OrFilter::default();
+
+        let search_entry = SearchEntry::construct(record.to_owned());
+        search_entry
             .attrs
-            .iter()
+            .into_iter()
             .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.to_owned()))
-            .collect();
+            .map(|(arrta, value)| (arrta.to_owned(), value.to_owned()))
+            .filter(|(attra, _)| attra.eq("member"))
+            .flat_map(|(_, value)| value)
+            .map(|val| {
+                val.split(',').collect::<Vec<&str>>()[0]
+                    .split('=')
+                    .map(|split| split.to_string())
+                    .collect::<Vec<String>>()
+            })
+            .map(|uid| EqFilter::from(uid[0].to_string(), uid[1].to_string()))
+            .for_each(|eq| or_filter.add(Box::new(eq)));
+
+        let result = self
+            .streaming_search(base_dn, scope, &or_filter, attributes)
+            .await;
 
         let mut members = Vec::new();
-        for member in result.get("member").unwrap() {
-            let uid = member.split(',').collect::<Vec<&str>>()[0]
-                .split('=')
-                .collect::<Vec<&str>>();
-            let filter = EqFilter::from(uid[0].to_string(), uid[1].to_string());
-            let x = self.search::<T>(base_dn, scope, &filter, attributes).await;
-            match x {
-                Ok(x) => {
-                    members.push(x);
+        match result {
+            Ok(mut result) => {
+                while let Some(member) = result.next().await {
+                    match member {
+                        Ok(member) => {
+                            let user: T = member.to_record().unwrap();
+                            members.push(user);
+                        }
+                        Err(err) => {
+                            error!("Error getting member error {:?}", err);
+                        }
+                    }
                 }
-                Err(err) => {
-                    error!("Error getting member {:?} error {:?}", member, err);
-                }
+                return Ok(members);
+            }
+            Err(err) => {
+                error!("Error getting members {:?} error {:?}", group_dn, err);
             }
         }
 

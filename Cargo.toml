@@ -6,7 +6,7 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "6.0.0"
+version = "6.0.1"
 edition = "2021"
 
 
@@ -19,7 +19,6 @@ futures = "0.3.31"
 ldap3 = { version = "0.11.5", default-features = false }
 serde = { version = "1.0.219", features = ["derive"] }
 serde-value = "0.7.0"
-serde_with = "3.12.0"
 thiserror = "2.0.12"
 tracing = "0.1.41"
 url = "2.5.4"
@@ -33,6 +32,7 @@ rand = "0.9.0"
 tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 # v4 is random uids.
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
+serde_with = "3.12.0"
 
 [features]
 default = ["tls-native"]

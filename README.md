@@ -65,7 +65,7 @@ async fn main(){
         "ou=people,dc=example,dc=com",
         Scope::OneLevel,
         &name_filter,
-        &vec!["cn", "sn", "uid"],
+        &vec!["cn", "sn", "uid","addresses"],
     ).await.unwrap();
 }
 ```
