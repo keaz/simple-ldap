@@ -11,18 +11,15 @@ use client_test_cases::ldap_config;
 use futures::try_join;
 use simple_ldap::pool::{build_connection_pool, Object, Pool};
 
-
 /// A convenience function for building a connection pool for tests.
 async fn build_pool() -> anyhow::Result<Pool> {
     let ldap_config = ldap_config()?;
     // Needs to be at lest 2 because of `dispatch_parallel_test`.
-    let pool_size = NonZeroUsize::new(3)
-        .context("Wasn't non-zero")?;
+    let pool_size = NonZeroUsize::new(3).context("Wasn't non-zero")?;
     let pool = build_connection_pool(ldap_config, pool_size).await?;
 
     Ok(pool)
 }
-
 
 /// A convenience function for runnig the test function in parallel with a pool.
 /// This should be used to evoke the test functions in `client_test_cases`.
@@ -31,7 +28,7 @@ async fn build_pool() -> anyhow::Result<Pool> {
 async fn dispatch_parallel_test<Function, Fut>(test_case: Function) -> anyhow::Result<()>
 where
     Function: Fn(Object) -> Fut,
-    Fut: Future<Output = anyhow::Result<()>>
+    Fut: Future<Output = anyhow::Result<()>>,
 {
     let pool = build_pool().await?;
     let client1 = pool.get().await?;
@@ -45,7 +42,6 @@ where
     Ok(())
 }
 
-
 #[tokio::test]
 async fn test_create_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_create_record).await
@@ -56,90 +52,75 @@ async fn test_search_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_search_record).await
 }
 
-
 #[tokio::test]
 async fn test_search_no_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_search_no_record).await
 }
-
 
 #[tokio::test]
 async fn test_search_multiple_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_search_multiple_record).await
 }
 
-
 #[tokio::test]
 async fn test_update_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_update_record).await
 }
-
 
 #[tokio::test]
 async fn test_update_no_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_update_no_record).await
 }
 
-
 #[tokio::test]
 async fn test_update_uid_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_update_uid_record).await
 }
-
 
 #[tokio::test]
 async fn test_streaming_search() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_streaming_search).await
 }
 
-
 #[tokio::test]
 async fn test_streaming_search_with() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_streaming_search_with).await
 }
-
 
 #[tokio::test]
 async fn test_streaming_search_no_records() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_streaming_search_no_records).await
 }
 
-
 #[tokio::test]
 async fn test_delete() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_delete).await
 }
-
 
 #[tokio::test]
 async fn test_no_record_delete() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_no_record_delete).await
 }
 
-
 #[tokio::test]
 async fn test_create_group() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_create_group).await
 }
-
 
 #[tokio::test]
 async fn test_add_users_to_group() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_add_users_to_group).await
 }
 
-
 #[tokio::test]
 async fn test_get_members() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_get_members).await
 }
 
-
 #[tokio::test]
 async fn test_remove_users_from_group() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_remove_users_from_group).await
 }
-
 
 #[tokio::test]
 async fn test_associated_groups() -> anyhow::Result<()> {

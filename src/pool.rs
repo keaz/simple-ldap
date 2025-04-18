@@ -1,3 +1,7 @@
+use deadpool::{
+    managed::{self, Metrics, RecycleResult},
+    managed_reexports,
+};
 /// # Pool
 ///
 /// Module for LDAP connection pooling using [`deadpool`](https://docs.rs/deadpool/latest/deadpool/index.html).
@@ -53,9 +57,7 @@
 /// You cannot `unbind` the clients got from the pool.
 /// Just return them to the pool. It will take care of it.
 ///
-
 use std::num::NonZeroUsize;
-use deadpool::{managed::{self, Metrics, RecycleResult}, managed_reexports};
 use tracing::debug;
 
 use crate::{Error, LdapClient, LdapConfig};
@@ -72,18 +74,16 @@ managed_reexports!(
 );
 
 /// Manager for deadpool.
-pub struct Manager{
+pub struct Manager {
     /// Configuration for creating connections.
-    config: LdapConfig
+    config: LdapConfig,
 }
 
 /// LDAP Manager for the `deadpool` managed connection pool.
 impl Manager {
     /// Creates a new manager.
     pub fn new(config: LdapConfig) -> Self {
-        Self{
-            config
-        }
+        Self { config }
     }
 }
 
@@ -110,11 +110,12 @@ impl deadpool::managed::Manager for Manager {
 }
 
 /// Create a new connection pool.
-pub async fn build_connection_pool(ldap_config: LdapConfig, pool_size: NonZeroUsize) -> Result<Pool, BuildError> {
+pub async fn build_connection_pool(
+    ldap_config: LdapConfig,
+    pool_size: NonZeroUsize,
+) -> Result<Pool, BuildError> {
     let manager = Manager::new(ldap_config);
-    let pool = Pool::builder(manager)
-        .max_size(pool_size.get())
-        .build()?;
+    let pool = Pool::builder(manager).max_size(pool_size.get()).build()?;
 
     Ok(pool)
 }
@@ -126,7 +127,7 @@ impl LdapClient {
     async fn unbind_ref(&mut self) -> Result<(), Error> {
         match self.ldap.unbind().await {
             Ok(_) => Ok(()),
-            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error))
+            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error)),
         }
     }
 }

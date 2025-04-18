@@ -74,8 +74,11 @@
 //!
 //! ```
 //! use serde::Deserialize;
+//! use serde_with::serde_as;
+//! use serde_with::OneOrMany;
 //!
 //! // A type for deserializing the search result into.
+//! #[serde_as] // serde_with for multiple values
 //! #[derive(Debug, Deserialize)]
 //! struct User {
 //!     // DN is always returned as single value string, whether you ask it or not.
@@ -85,6 +88,7 @@
 //!     // You can make up for the difference by using serde's renaming annotations.
 //!     #[serde(rename = "mayNotExist")]
 //!     may_not_exist: Option<String>,
+//!     #[serde_as(as = "OneOrMany<_>")] // serde_with for multiple values
 //!     multivalued_attribute: Vec<String>
 //! }
 //! ```
@@ -292,11 +296,7 @@ impl LdapClient {
         password: &str,
         filter: Box<dyn Filter>,
     ) -> Result<(), Error> {
-        let attr_dn = self
-            .dn_attr
-            .as_ref()
-            .map(|a| a.as_str())
-            .unwrap_or(LDAP_ENTRY_DN);
+        let attr_dn = self.dn_attr.as_deref().unwrap_or(LDAP_ENTRY_DN);
 
         let rs = self
             .ldap
@@ -1569,12 +1569,12 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
 
     let value = serde_value::Value::Map(all_fields);
 
-    Ok(T::deserialize(value).map_err(|err| {
+    T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
             "Error converting search result to object, {:?}",
             err
         ))
-    })?)
+    })
 }
 
 #[instrument(level = Level::DEBUG)]
@@ -1625,12 +1625,12 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
 
     let value = serde_value::Value::Map(all_fields);
 
-    Ok(T::deserialize(value).map_err(|err| {
+    T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
             "Error converting search result to object, {:?}",
             err
         ))
-    })?)
+    })
 }
 
 fn map_to_multi_value(attra_value: Vec<String>) -> serde_value::Value {
@@ -1651,7 +1651,7 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
                 .map(|byte| Value::U8(*byte))
                 .collect::<Vec<Value>>()
         })
-        .map(|bytes| serde_value::Value::Seq(bytes))
+        .map(serde_value::Value::Seq)
         .collect::<Vec<Value>>();
 
     serde_value::Value::Seq(value_bytes)
@@ -1667,12 +1667,12 @@ fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Resu
         ))
     })?;
 
-    Ok(T::deserialize(value).map_err(|err| {
+    T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
             "Error converting search result to object, {:?}",
             err
         ))
-    })?)
+    })
 }
 
 fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
@@ -1685,7 +1685,7 @@ fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
 fn map_to_single_value_bin(attra_values: Option<Vec<u8>>) -> serde_value::Value {
     match attra_values {
         Some(bytes) => {
-            let value_bytes = bytes.into_iter().map(|byte| Value::U8(byte)).collect();
+            let value_bytes = bytes.into_iter().map(Value::U8).collect();
 
             serde_value::Value::Seq(value_bytes)
         }
@@ -1729,11 +1729,11 @@ where
             Some(entry) => {
                 // self.count += 1;
                 let entry = SearchEntry::construct(entry);
-                return Ok(StreamResult::Record(entry));
+                Ok(StreamResult::Record(entry))
             }
             None => {
                 // self.limit = self.count; // Set the limit to the count, to that poll_next will return None
-                return Ok(StreamResult::Finished);
+                Ok(StreamResult::Finished)
             }
         }
     }
@@ -1790,9 +1790,7 @@ where
                     StreamResult::Done => Poll::Ready(None),
                     StreamResult::Finished => Poll::Ready(None),
                 },
-                Err(er) => {
-                    return Poll::Ready(Some(Err(er)));
-                }
+                Err(er) => Poll::Ready(Some(Err(er))),
             },
             Poll::Pending => Poll::Pending,
         }
