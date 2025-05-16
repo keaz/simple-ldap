@@ -38,7 +38,7 @@
 //!
 //! When calling these with plain `LdapClient`, wrap it in a `Box`.
 
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use rand::Rng;
 use serde::Deserialize;
 use simple_ldap::{
@@ -46,7 +46,9 @@ use simple_ldap::{
     ldap3::{Mod, Scope},
     Error, LdapClient, LdapConfig,
 };
-use std::{collections::HashSet, ops::DerefMut};
+use tracing::Level;
+use tracing_subscriber::fmt::format::FmtSpan;
+use std::{collections::HashSet, ops::DerefMut, sync::Once};
 use url::Url;
 use uuid::Uuid;
 
@@ -248,7 +250,7 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
     let attra = vec!["cn", "sn", "uid"];
-    let mut stream = client
+    let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
@@ -257,8 +259,10 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
         )
         .await?;
 
+    let mut pinned_stream = Box::pin(stream);
+
     let mut count = 0;
-    while let Some(record) = stream.next().await {
+    while let Some(record) = pinned_stream.next().await {
         match record {
             Ok(record) => {
                 let _ = record.to_record::<User>().unwrap();
@@ -269,51 +273,84 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
             }
         }
     }
-    let _ = stream.cleanup().await;
+
     assert!(count == 2);
 
     Ok(())
 }
 
-pub async fn test_streaming_search_with<Client: DerefMut<Target = LdapClient>>(
+pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+{
+    enable_tracing_subscriber();
+
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
     let attra = vec!["cn", "sn", "uid"];
-    let mut result = client
-        .streaming_search_with(
+    let stream = client
+        .streaming_search_paged(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attra,
-            3,
+            // Testing with a pagesize smaller than the result set so that we actually see
+            // multiple pages.
+            2,
         )
         .await?;
 
-    let mut count = 0;
-    while let Some(record) = result.next().await {
-        match record {
-            Ok(record) => {
-                let _ = record.to_record::<User>().unwrap();
-                count += 1;
-            }
-            Err(_) => {
-                break;
-            }
-        }
-    }
-    assert!(count == 3);
-    let _ = result.cleanup().await;
+    let count = stream.and_then(async |record| record.to_record())
+        .try_fold(0, async |sum, _ :User| Ok(sum + 1))
+        .await?;
+
+    assert_eq!(count, 3);
 
     Ok(())
 }
 
+
+pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()>
+{
+    // Here we always want to trace.
+    enable_tracing_subscriber();
+
+    let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
+    let attra = vec!["cn", "sn", "uid"];
+    let stream = client
+        .streaming_search_paged(
+            "ou=people,dc=example,dc=com",
+            simple_ldap::ldap3::Scope::OneLevel,
+            &name_filter,
+            &attra,
+            // Testing with a pagesize smaller than the result set so that we actually see
+            // multiple pages. Expecting 3 in total.
+            2,
+        )
+        .await?;
+
+    let mut pinned_stream = Box::pin(stream);
+
+    // Get one element from the stream.
+    pinned_stream.try_next().await?;
+
+    // Then just let it drop.
+    // This won't actually ever fail, but you can see the tracing log that no errors occurred.
+    Ok(())
+}
+
+
+
 pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+{
+    enable_tracing_subscriber();
+
     let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
     let attra = vec!["cn", "sn", "uid"];
-    let mut result = client
+    let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
@@ -322,21 +359,11 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
         )
         .await?;
 
-    let mut count = 0;
+    let count = stream.and_then(async |record| record.to_record())
+        .try_fold(0, async |sum, _ :User| Ok(sum + 1))
+        .await?;
 
-    while let Some(record) = result.next().await {
-        match record {
-            Ok(record) => {
-                let _ = record.to_record::<User>().unwrap();
-                count += 1;
-            }
-            Err(_) => {
-                break;
-            }
-        }
-    }
     assert_eq!(count, 0);
-    let _ = result.cleanup().await;
 
     Ok(())
 }
@@ -534,6 +561,7 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
+
 /***************
  *  Utilities  *
  ***************/
@@ -569,4 +597,21 @@ pub fn ldap_config() -> anyhow::Result<LdapConfig> {
     };
 
     Ok(config)
+}
+
+/// Print out traces in tests.
+///
+/// It's perhaps best not to overuse this, as it's quite verbose.
+/// You can add it to the start of test you wish to investigate.
+fn enable_tracing_subscriber() -> () {
+    static ONCE: Once = Once::new();
+
+    // Tests are run in parallel and might try to set the subscriber multiple times.
+    ONCE.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+            .with_max_level(Level::TRACE)
+            .init();
+        }
+    );
 }

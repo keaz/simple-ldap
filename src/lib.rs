@@ -20,7 +20,7 @@
 //! cargo add simple-ldap
 //! ```
 //!
-//! Most functionalities are defined on the [LdapClient] type. Have a look at the docs.
+//! Most functionalities are defined on the [`LdapClient`] type. Have a look at the docs.
 //!
 //!
 //! ### Example
@@ -117,6 +117,7 @@
 //! binary attributes. This will be fixed in the future. As a workaround, you can use `search_multi_valued` or `Record::to_multi_valued_record_`.
 //! To use those method all the attributes should be multi-valued.
 //!
+//!
 //! ## Compile time features
 //!
 //! * `tls-native` - (Enabled by default) Enables TLS support using the systems native implementation.
@@ -126,22 +127,18 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter,
-    pin::Pin,
-    task::{Context, Poll},
+    iter
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
-use futures::{FutureExt, StreamExt};
+use futures::{executor::block_on, stream, Stream, StreamExt};
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults},
-    Ldap, LdapConnAsync, LdapConnSettings, LdapError, Mod, Scope, SearchEntry, SearchStream,
-    StreamState,
+    adapters::{Adapter, EntriesOnly, PagedResults}, Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry, SearchStream, StreamState
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use thiserror::Error;
-use tracing::{debug, error, instrument, warn, Level};
+use tracing::{debug, error, info, instrument, warn, Level};
 use url::Url;
 
 pub mod filter;
@@ -531,36 +528,13 @@ impl LdapClient {
         to_multi_value(search_entry)
     }
 
-    async fn streaming_search_inner<'a>(
-        &mut self,
-        base: &'a str,
-        scope: Scope,
-        filter: &'a (impl Filter + ?Sized),
-        attributes: &'a Vec<&'a str>,
-    ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
-        let search_stream: Result<SearchStream<'_, &str, &Vec<&str>>, LdapError> = self
-            .ldap
-            .streaming_search(base, scope, filter.filter().as_str(), attributes)
-            .await;
-        if let Err(error) = search_stream {
-            return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
-                error,
-            ));
-        }
-
-        let search_stream = search_stream.unwrap();
-
-        let stream = Stream::new(search_stream);
-        Ok(stream)
-    }
 
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
-    /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
+    /// Method will return a Stream. The stream will lazily fetch the results, resulting in a smaller
     /// memory footprint.
     ///
-    /// Prefer streaming search if you don't know that the result set is going to be small.
+    /// You might also want to take a look at [`streaming_search_paged()`].
     ///
     ///
     /// # Arguments
@@ -573,7 +547,16 @@ impl LdapClient {
     ///
     /// # Returns
     ///
-    /// * `Result<Stream, Error>` - The result will be mapped to a Stream. **Remember to `cleanup()` it when you're done!**
+    /// A stream that can be used to iterate through the search results.
+    ///
+    ///
+    /// ## Blocking drop caveat
+    ///
+    /// Dropping this stream may issue blocking network requests to cancel the search.
+    /// Running the stream to it's end will minimize the chances of this happening.
+    /// You should take this into account if latency is critical to your application.
+    ///
+    /// We're waiting for [`AsyncDrop`](https://github.com/rust-lang/rust/issues/126482) for implementing this properly.
     ///
     ///
     /// # Example
@@ -611,14 +594,18 @@ impl LdapClient {
     ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
     ///     let attributes = vec!["cn", "sn", "uid"];
     ///
-    ///     let mut stream = client.streaming_search(
+    ///     let stream = client.streaming_search(
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
     ///         &attributes
     ///     ).await.unwrap();
     ///
-    ///     while let Some(result) = stream.next().await {
+    ///     // The returned stream is not Unpin, so you may need to pin it to use certain operations,
+    ///     // such as next() below.
+    ///     let mut pinned_steam = Box::pin(stream);
+    ///
+    ///     while let Some(result) = pinned_steam.next().await {
     ///         match result {
     ///             Ok(element) => {
     ///                 let user: User = element.to_record().unwrap();
@@ -629,11 +616,10 @@ impl LdapClient {
     ///             }
     ///         }
     ///     }
-    ///     stream.cleanup().await;
     /// }
     /// ```
     ///
-    pub async fn streaming_search<'a>(
+    pub async fn streaming_search<'a, F: Filter>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -645,14 +631,20 @@ impl LdapClient {
         &'a mut self,
         base: &'a str,
         scope: Scope,
-        filter: &'a impl Filter,
+        filter: &'a F,
         attributes: &'a Vec<&'a str>,
-    ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
-        let entry = self
-            .streaming_search_inner(base, scope, filter, attributes)
-            .await?;
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
+    {
+        let search_stream = self
+            .ldap
+            .streaming_search(base, scope, filter.filter().as_str(), attributes)
+            .await
+            .map_err(|ldap_error| Error::Query(
+                format!("Error searching for record: {ldap_error:?}"),
+                ldap_error,
+            ))?;
 
-        Ok(entry)
+        to_native_stream(search_stream)
     }
 
     ///
@@ -660,7 +652,7 @@ impl LdapClient {
     /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
     /// memory footprint.
     ///
-    /// Prefer streaming search if you don't know that the result set is going to be small.
+    /// This is the recommended search method, especially if you don't know that the result set is going to be small.
     ///
     ///
     /// # Arguments
@@ -674,7 +666,17 @@ impl LdapClient {
     ///
     /// # Returns
     ///
-    /// * `Result<Stream, Error>` - A stream that can be used to iterate through the search results.
+    /// A stream that can be used to iterate through the search results.
+    ///
+    ///
+    /// ## Blocking drop caveat
+    ///
+    /// Dropping this stream may issue blocking network requests to cancel the search.
+    /// Running the stream to it's end will minimize the chances of this happening.
+    /// You should take this into account if latency is critical to your application.
+    ///
+    /// We're waiting for [`AsyncDrop`](https://github.com/rust-lang/rust/issues/126482) for implementing this properly.
+    ///
     ///
     ///
     /// # Example
@@ -687,7 +689,7 @@ impl LdapClient {
     /// };
     /// use url::Url;
     /// use serde::Deserialize;
-    /// use futures::StreamExt;
+    /// use futures::{StreamExt, TryStreamExt};
     ///
     ///
     /// #[derive(Deserialize, Debug)]
@@ -712,7 +714,7 @@ impl LdapClient {
     ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
     ///     let attributes = vec!["cn", "sn", "uid"];
     ///
-    ///     let mut stream = client.streaming_search_with(
+    ///     let stream = client.streaming_search_paged(
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
@@ -720,22 +722,19 @@ impl LdapClient {
     ///         200 // The pagesize
     ///     ).await.unwrap();
     ///
-    ///     while let Some(result) = stream.next().await {
-    ///         match result {
-    ///             Ok(element) => {
-    ///                 let user: User = element.to_record().unwrap();
-    ///                 println!("User: {:?}", user);
-    ///             }
-    ///             Err(err) => {
-    ///                 println!("Error: {:?}", err);
-    ///             }
-    ///         }
-    ///     }
-    ///     stream.cleanup().await;
+    ///     // Map the search results to User type.
+    ///     stream.and_then(async |record| record.to_record())
+    ///          // Do something with the Users concurrently.
+    ///         .try_for_each(async |user: User| {
+    ///             println!("User: {:?}", user);
+    ///             Ok(())
+    ///         })
+    ///         .await
+    ///         .unwrap();
     /// }
     /// ```
     ///
-    pub async fn streaming_search_with<'a>(
+    pub async fn streaming_search_paged<'a, F: Filter>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -747,10 +746,11 @@ impl LdapClient {
         &'a mut self,
         base: &'a str,
         scope: Scope,
-        filter: &'a (impl Filter + ?Sized),
+        filter: &'a F,
         attributes: &'a Vec<&'a str>,
         page_size: i32,
-    ) -> Result<Stream<'a, &'a str, &'a Vec<&'a str>>, Error> {
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
+    {
         let adapters: Vec<Box<dyn Adapter<_, _>>> = vec![
             Box::new(EntriesOnly::new()),
             Box::new(PagedResults::new(page_size)),
@@ -758,20 +758,15 @@ impl LdapClient {
         let search_stream = self
             .ldap
             .streaming_search_with(adapters, base, scope, filter.filter().as_str(), attributes)
-            .await;
+            .await
+            .map_err(|ldap_error| Error::Query(
+                format!("Error searching for record: {ldap_error:?}"),
+                ldap_error,
+            ))?;
 
-        if let Err(error) = search_stream {
-            return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
-                error,
-            ));
-        }
-
-        let search_stream = search_stream.unwrap();
-
-        let stream = Stream::new(search_stream);
-        Ok(stream)
+        to_native_stream(search_stream)
     }
+
 
     ///
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
@@ -1307,14 +1302,16 @@ impl LdapClient {
 
         let mut members = Vec::new();
         match result {
-            Ok(mut result) => {
-                while let Some(member) = result.next().await {
+            Ok(result) => {
+                let mut stream = Box::pin(result);
+                while let Some(member) = stream.next().await {
                     match member {
                         Ok(member) => {
                             let user: T = member.to_record().unwrap();
                             members.push(user);
                         }
                         Err(err) => {
+                            // TODO: Exit with an error instead?
                             error!("Error getting member error {:?}", err);
                         }
                     }
@@ -1322,6 +1319,7 @@ impl LdapClient {
                 return Ok(members);
             }
             Err(err) => {
+                // TODO: Exit with an error instead?
                 error!("Error getting members {:?} error {:?}", group_dn, err);
             }
         }
@@ -1693,113 +1691,127 @@ fn map_to_single_value_bin(attra_values: Option<Vec<u8>>) -> serde_value::Value 
     }
 }
 
-/// The Stream struct is used to iterate through the search results.
-/// The stream will return a Record object. The Record object can be used to map the search result to a struct.
-/// After the stream is finished, the cleanup method should be called to cleanup the stream.
+/// This wrapper exists solely for the purpose of runnig some cleanup in `drop()`.
 ///
-pub struct Stream<'a, S, A> {
-    search_stream: SearchStream<'a, S, A>,
-}
-
-impl<'a, S, A> Stream<'a, S, A>
+/// This should be refactored to implement `AsyncDrop` when it gets stabilized:
+/// https://github.com/rust-lang/rust/issues/126482
+struct StreamDropWrapper<'a, S, A>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
-    fn new(search_stream: SearchStream<'a, S, A>) -> Stream<'a, S, A> {
-        Stream { search_stream }
+    pub search_stream: SearchStream<'a, S, A>,
+}
+
+
+impl<'a, S, A> Drop for StreamDropWrapper<'a, S, A>
+where
+    S: AsRef<str> + Send + Sync + 'a,
+    A: AsRef<[S]> + Send + Sync + 'a,
+{
+    fn drop(&mut self) {
+        // Making this blocking call in drop is suboptimal.
+        // We should use async-drop, when it's stabilized:
+        // https://github.com/rust-lang/rust/issues/126482
+        block_on(self.cleanup());
     }
+}
 
-    async fn next_inner(&mut self) -> Result<StreamResult<SearchEntry>, Error> {
-        let next = self.search_stream.next().await;
-        if let Err(err) = next {
-            return Err(Error::Query(
-                format!("Error getting next record: {:?}", err),
-                err,
-            ));
-        }
-
-        if self.search_stream.state() != StreamState::Active {
-            // self.limit = self.count; // Set the limit to the count, to that poll_next will return None
-            return Ok(StreamResult::Finished);
-        }
-
-        let entry = next.unwrap();
-        match entry {
-            Some(entry) => {
-                // self.count += 1;
-                let entry = SearchEntry::construct(entry);
-                Ok(StreamResult::Record(entry))
-            }
-            None => {
-                // self.limit = self.count; // Set the limit to the count, to that poll_next will return None
-                Ok(StreamResult::Finished)
-            }
-        }
-    }
-
+impl<'a, S, A> StreamDropWrapper<'a, S, A>
+where
+    S: AsRef<str> + Send + Sync + 'a,
+    A: AsRef<[S]> + Send + Sync + 'a,
+{
     ///
-    /// Cleanup the stream. This method should be called after the stream is finished,
-    /// especially if you're stopping before the stream ends naturally.
+    /// Cleanup the stream. This method should be called when dropping the stream.
     ///
     /// This method will cleanup the stream and close the connection.
     ///
-    pub async fn cleanup(&mut self) -> Result<(), Error> {
-        let state = self.search_stream.state();
-        if state == StreamState::Done || state == StreamState::Closed {
-            return Ok(());
-        }
-        let _res = self.search_stream.finish().await;
-        let msgid = self.search_stream.ldap_handle().last_id();
-        let result = self.search_stream.ldap_handle().abandon(msgid).await;
+    ///
+    /// # Errors
+    ///
+    /// No errors are returned, as this is meant to be called from `drop()`.
+    /// Traces are emitted though.
+    ///
+    #[instrument(level = Level::TRACE, skip_all)]
+    async fn cleanup(&mut self) -> () {
+        // Calling this might not be strictly necessary,
+        // but it's probably expected so let's just do it.
+        // I don't think this does any networkig most of the time.
+        let finish_result = self.search_stream.finish().await;
 
-        match result {
-            Ok(_) => {
-                debug!("Sucessfully abandoned search result: {:?}", msgid);
-                Ok(())
-            }
-            Err(err) => {
-                error!("Error abandoning search result: {:?}", err);
-                Err(Error::Abandon(
-                    format!("Error abandoning search result: {:?}", err),
-                    err,
-                ))
+        match finish_result.success() {
+            Ok(_) => (), // All good.
+            // This is returned if the stream is cancelled in the middle.
+            // Which is fine for us.
+            Err(LdapError::LdapResult {result: LdapResult{rc: return_code, ..}})
+                // https://ldap.com/ldap-result-code-reference-client-side-result-codes/#rc-userCanceled
+                if return_code == 88 => (),
+            Err(finish_err) => error!("The stream finished with an error: {finish_err}"),
+        }
+
+        match self.search_stream.state() {
+            // Stream processed to the end, no need to cancel the operation.
+            // This should be the common case.
+            StreamState::Done |  StreamState::Closed => (),
+            StreamState::Error => {
+                error!("Stream is in Error state. Not trying to cancel it as it could do more harm than good.");
+                ()
+            },
+            StreamState::Fresh | StreamState::Active => {
+                info!("Stream is still open. Issuing cancellation to the server.");
+                let msgid = self.search_stream.ldap_handle().last_id();
+                let result = self.search_stream.ldap_handle().abandon(msgid).await;
+
+                match result {
+                    Ok(_) => (),
+                    Err(err) => {
+                        error!("Error abandoning search result: {:?}", err);
+                        ()
+                    }
+                }
             }
         }
     }
 }
 
-impl<'a, S, A> futures::stream::Stream for Stream<'a, S, A>
+
+/// A helper to create native rust streams out of `ldap3::SearchStream`s.
+fn to_native_stream<'a, S, A>(ldap3_stream: SearchStream<'a, S, A>)
+-> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
-    type Item = Result<Record, Error>;
+    // This will handle stream cleanup.
+    let stream_wrapper = StreamDropWrapper {search_stream: ldap3_stream};
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Record, Error>>> {
-        let poll = self.next_inner().boxed().as_mut().poll(cx);
-        match poll {
-            Poll::Ready(result) => match result {
-                Ok(result) => match result {
-                    StreamResult::Record(record) => Poll::Ready(Some(Ok(Record {
-                        search_entry: record,
-                    }))),
-                    StreamResult::Done => Poll::Ready(None),
-                    StreamResult::Finished => Poll::Ready(None),
-                },
-                Err(er) => Poll::Ready(Some(Err(er))),
-            },
-            Poll::Pending => Poll::Pending,
+    // Produce the steam itself by unfolding.
+    let stream = stream::try_unfold(stream_wrapper, async | mut search |
+        {
+            match search.search_stream.next().await {
+                // In the middle of the stream. Produce the next result.
+                Ok(Some(result_entry)) => Ok(Some((Record{ search_entry: SearchEntry::construct(result_entry)}, search))),
+                // Stream is done.
+                Ok(None) => Ok(None),
+                Err(ldap_error) => Err(Error::Query(
+                    format!("Error getting next record: {ldap_error:?}"),
+                    ldap_error,
+                )),
+            }
         }
-    }
+    );
+
+    Ok(stream)
 }
+
 
 /// The Record struct is used to map the search result to a struct.
 /// The Record struct has a method to_record which will map the search result to a struct.
 /// The Record struct has a method to_multi_valued_record which will map the search result to a struct with multi valued attributes.
+//
+// It would be nice to hide this record type from the public API and just expose already
+// deserialized user types.
 pub struct Record {
     search_entry: SearchEntry,
 }

@@ -83,8 +83,13 @@ async fn test_streaming_search() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_streaming_search_with() -> anyhow::Result<()> {
-    dispatch_parallel_test(client_test_cases::test_streaming_search_with).await
+async fn test_streaming_search_paged() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_streaming_search_paged).await
+}
+
+#[tokio::test]
+async fn test_search_stream_drop() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_search_stream_drop).await
 }
 
 #[tokio::test]

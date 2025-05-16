@@ -66,9 +66,15 @@ async fn test_streaming_search() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_streaming_search_with() -> anyhow::Result<()> {
+async fn test_streaming_search_paged() -> anyhow::Result<()> {
     let client = get_test_client().await?;
-    client_test_cases::test_streaming_search_with(Box::new(client)).await
+    client_test_cases::test_streaming_search_paged(Box::new(client)).await
+}
+
+#[tokio::test]
+async fn test_search_stream_drop() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::test_search_stream_drop(Box::new(client)).await
 }
 
 #[tokio::test]
