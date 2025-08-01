@@ -127,13 +127,15 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter
+    iter,
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
 use futures::{executor::block_on, stream, Stream, StreamExt};
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults}, Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry, SearchStream, StreamState
+    adapters::{Adapter, EntriesOnly, PagedResults},
+    Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
+    SearchStream, StreamState,
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
@@ -144,6 +146,12 @@ use url::Url;
 pub mod filter;
 #[cfg(feature = "pool")]
 pub mod pool;
+pub mod simple_dn;
+// Export the main type of the module right here in the root.
+pub use simple_dn::SimpleDN;
+
+// Would likely be better if we could avoid re-exporting this.
+// I suspect it's only used in some configs?
 pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: &str = "entryDN";
@@ -154,6 +162,7 @@ const NO_SUCH_RECORD: u32 = 32;
 pub struct LdapConfig {
     pub ldap_url: Url,
     /// DistinguishedName, aka the "username" to use for the connection.
+    // Perhaps we don't want to use SimpleDN here, as it would make it impossible to bind to weird DNs.
     pub bind_dn: String,
     #[debug(skip)] // We don't want to print passwords.
     pub bind_password: String,
@@ -528,7 +537,6 @@ impl LdapClient {
         to_multi_value(search_entry)
     }
 
-
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
     /// Method will return a Stream. The stream will lazily fetch the results, resulting in a smaller
@@ -633,16 +641,17 @@ impl LdapClient {
         scope: Scope,
         filter: &'a F,
         attributes: &'a Vec<&'a str>,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
-    {
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
         let search_stream = self
             .ldap
             .streaming_search(base, scope, filter.filter().as_str(), attributes)
             .await
-            .map_err(|ldap_error| Error::Query(
-                format!("Error searching for record: {ldap_error:?}"),
-                ldap_error,
-            ))?;
+            .map_err(|ldap_error| {
+                Error::Query(
+                    format!("Error searching for record: {ldap_error:?}"),
+                    ldap_error,
+                )
+            })?;
 
         to_native_stream(search_stream)
     }
@@ -749,8 +758,7 @@ impl LdapClient {
         filter: &'a F,
         attributes: &'a Vec<&'a str>,
         page_size: i32,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
-    {
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
         let adapters: Vec<Box<dyn Adapter<_, _>>> = vec![
             Box::new(EntriesOnly::new()),
             Box::new(PagedResults::new(page_size)),
@@ -759,14 +767,15 @@ impl LdapClient {
             .ldap
             .streaming_search_with(adapters, base, scope, filter.filter().as_str(), attributes)
             .await
-            .map_err(|ldap_error| Error::Query(
-                format!("Error searching for record: {ldap_error:?}"),
-                ldap_error,
-            ))?;
+            .map_err(|ldap_error| {
+                Error::Query(
+                    format!("Error searching for record: {ldap_error:?}"),
+                    ldap_error,
+                )
+            })?;
 
         to_native_stream(search_stream)
     }
-
 
     ///
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
@@ -1703,7 +1712,6 @@ where
     pub search_stream: SearchStream<'a, S, A>,
 }
 
-
 impl<'a, S, A> Drop for StreamDropWrapper<'a, S, A>
 where
     S: AsRef<str> + Send + Sync + 'a,
@@ -1753,11 +1761,11 @@ where
         match self.search_stream.state() {
             // Stream processed to the end, no need to cancel the operation.
             // This should be the common case.
-            StreamState::Done |  StreamState::Closed => (),
+            StreamState::Done | StreamState::Closed => (),
             StreamState::Error => {
                 error!("Stream is in Error state. Not trying to cancel it as it could do more harm than good.");
                 ()
-            },
+            }
             StreamState::Fresh | StreamState::Active => {
                 info!("Stream is still open. Issuing cancellation to the server.");
                 let msgid = self.search_stream.ldap_handle().last_id();
@@ -1775,36 +1783,40 @@ where
     }
 }
 
-
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
-fn to_native_stream<'a, S, A>(ldap3_stream: SearchStream<'a, S, A>)
--> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
+fn to_native_stream<'a, S, A>(
+    ldap3_stream: SearchStream<'a, S, A>,
+) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
     // This will handle stream cleanup.
-    let stream_wrapper = StreamDropWrapper {search_stream: ldap3_stream};
+    let stream_wrapper = StreamDropWrapper {
+        search_stream: ldap3_stream,
+    };
 
     // Produce the steam itself by unfolding.
-    let stream = stream::try_unfold(stream_wrapper, async | mut search |
-        {
-            match search.search_stream.next().await {
-                // In the middle of the stream. Produce the next result.
-                Ok(Some(result_entry)) => Ok(Some((Record{ search_entry: SearchEntry::construct(result_entry)}, search))),
-                // Stream is done.
-                Ok(None) => Ok(None),
-                Err(ldap_error) => Err(Error::Query(
-                    format!("Error getting next record: {ldap_error:?}"),
-                    ldap_error,
-                )),
-            }
+    let stream = stream::try_unfold(stream_wrapper, async |mut search| {
+        match search.search_stream.next().await {
+            // In the middle of the stream. Produce the next result.
+            Ok(Some(result_entry)) => Ok(Some((
+                Record {
+                    search_entry: SearchEntry::construct(result_entry),
+                },
+                search,
+            ))),
+            // Stream is done.
+            Ok(None) => Ok(None),
+            Err(ldap_error) => Err(Error::Query(
+                format!("Error getting next record: {ldap_error:?}"),
+                ldap_error,
+            )),
         }
-    );
+    });
 
     Ok(stream)
 }
-
 
 /// The Record struct is used to map the search result to a struct.
 /// The Record struct has a method to_record which will map the search result to a struct.
