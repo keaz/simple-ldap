@@ -29,7 +29,7 @@
 //!
 //! ```no_run
 //! use simple_ldap::{
-//!     LdapClient, LdapConfig,
+//!     LdapClient, LdapConfig, SimpleDN,
 //!     filter::EqFilter,
 //!     ldap3::Scope
 //! };
@@ -39,9 +39,11 @@
 //! // A type for deserializing the search result into.
 //! #[derive(Debug, Deserialize)]
 //! struct User {
-//!     uid: String,
-//!     cn: String,
-//!     sn: String,
+//!     // // A convenience type for Distinguished Names.
+//!     pub dn: SimpleDN,
+//!     pub uid: String,
+//!     pub cn: String,
+//!     pub sn: String,
 //! }
 //!
 //!
@@ -61,7 +63,7 @@
 //!         "ou=people,dc=example,dc=com",
 //!         Scope::OneLevel,
 //!         &name_filter,
-//!         &vec!["cn", "sn", "uid"],
+//!         &vec!["dn", "cn", "sn", "uid"],
 //!     ).await.unwrap();
 //! }
 //! ```
@@ -77,19 +79,23 @@
 //! use serde_with::serde_as;
 //! use serde_with::OneOrMany;
 //!
+//! use simple_ldap::SimpleDN;
+//!
 //! // A type for deserializing the search result into.
 //! #[serde_as] // serde_with for multiple values
 //! #[derive(Debug, Deserialize)]
 //! struct User {
-//!     // DN is always returned as single value string, whether you ask it or not.
-//!     dn: String,
-//!     cn: String,
+//!     // DN is always returned, whether you ask it or not.
+//!     // You could deserialize it as a plain String, but using
+//!     // SimpleDN gives you type-safety.
+//!     pub dn: SimpleDN,
+//!     pub cn: String,
 //!     // LDAP and Rust naming conventions differ.
 //!     // You can make up for the difference by using serde's renaming annotations.
 //!     #[serde(rename = "mayNotExist")]
-//!     may_not_exist: Option<String>,
+//!     pub may_not_exist: Option<String>,
 //!     #[serde_as(as = "OneOrMany<_>")] // serde_with for multiple values
-//!     multivalued_attribute: Vec<String>
+//!     pub multivalued_attribute: Vec<String>
 //! }
 //! ```
 //!
