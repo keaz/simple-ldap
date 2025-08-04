@@ -321,12 +321,11 @@ impl LdapClient {
             .map_err(|e| Error::Query("Could not find user for authentication".into(), e))?;
 
         if data.is_empty() {
-            return Err(Error::NotFound(format!("No record found {:?}", uid)));
+            return Err(Error::NotFound(format!("No record found {uid:?}")));
         }
         if data.len() > 1 {
             return Err(Error::MultipleResults(format!(
-                "Found multiple records for uid {:?}",
-                uid
+                "Found multiple records for uid {uid:?}"
             )));
         }
 
@@ -347,11 +346,11 @@ impl LdapClient {
             .simple_bind(entry_dn, password)
             .await
             .map_err(|_| {
-                Error::AuthenticationFailed(format!("Error authenticating user: {:?}", uid))
+                Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
             })
             .and_then(|r| {
                 r.success().map_err(|_| {
-                    Error::AuthenticationFailed(format!("Error authenticating user: {:?}", uid))
+                    Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
                 })
             })
             .and(Ok(()))
@@ -370,14 +369,14 @@ impl LdapClient {
             .await;
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -834,11 +833,11 @@ impl LdapClient {
         base: &str,
         data: Vec<(&str, HashSet<&str>)>,
     ) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -846,7 +845,7 @@ impl LdapClient {
 
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -914,12 +913,12 @@ impl LdapClient {
         data: Vec<Mod<&str>>,
         new_uid: Option<&str>,
     ) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
 
         let res = self.ldap.modify(dn.as_str(), data).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error updating record: {:?}", err),
+                format!("Error updating record: {err:?}"),
                 err,
             ));
         }
@@ -930,14 +929,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            uid
+                            "No records found for the uid: {uid:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error updating record: {:?}", err),
+                        format!("Error updating record: {err:?}"),
                         err,
                     ));
                 }
@@ -950,7 +948,7 @@ impl LdapClient {
 
         let new_uid = new_uid.unwrap();
         if !uid.eq_ignore_ascii_case(new_uid) {
-            let new_dn = format!("uid={}", new_uid);
+            let new_dn = format!("uid={new_uid}");
             let dn_update = self
                 .ldap
                 .modifydn(dn.as_str(), new_dn.as_str(), true, None)
@@ -958,7 +956,7 @@ impl LdapClient {
             if let Err(err) = dn_update {
                 error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for record {:?}", uid),
+                    format!("Failed to update dn for record {uid:?}"),
                     err,
                 ));
             }
@@ -967,7 +965,7 @@ impl LdapClient {
             if let Err(err) = dn_update {
                 error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for record {:?}", uid),
+                    format!("Failed to update dn for record {uid:?}"),
                     err,
                 ));
             }
@@ -1015,12 +1013,12 @@ impl LdapClient {
     /// }
     /// ```
     pub async fn delete(&mut self, uid: &str, base: &str) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
         let delete = self.ldap.delete(dn.as_str()).await;
 
         if let Err(err) = delete {
             return Err(Error::Delete(
-                format!("Error deleting record: {:?}", err),
+                format!("Error deleting record: {err:?}"),
                 err,
             ));
         }
@@ -1030,14 +1028,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            uid
+                            "No records found for the uid: {uid:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Delete(
-                        format!("Error deleting record: {:?}", err),
+                        format!("Error deleting record: {err:?}"),
                         err,
                     ));
                 }
@@ -1088,7 +1085,7 @@ impl LdapClient {
         group_ou: &str,
         description: &str,
     ) -> Result<(), Error> {
-        let dn = format!("cn={},{}", group_name, group_ou);
+        let dn = format!("cn={group_name},{group_ou}");
 
         let data = vec![
             ("objectClass", HashSet::from(["top", "groupOfNames"])),
@@ -1099,7 +1096,7 @@ impl LdapClient {
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -1107,7 +1104,7 @@ impl LdapClient {
 
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error creating group: {:?}", err),
+                format!("Error creating group: {err:?}"),
                 err,
             ));
         }
@@ -1164,7 +1161,7 @@ impl LdapClient {
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error updating record: {:?}", err),
+                format!("Error updating record: {err:?}"),
                 err,
             ));
         }
@@ -1175,14 +1172,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            group_dn
+                            "No records found for the uid: {group_dn:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error updating record: {:?}", err),
+                        format!("Error updating record: {err:?}"),
                         err,
                     ));
                 }
@@ -1264,14 +1260,14 @@ impl LdapClient {
 
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -1392,7 +1388,7 @@ impl LdapClient {
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                format!("Error removing users from group:{group_dn:?}: {err:?}"),
                 err,
             ));
         }
@@ -1403,14 +1399,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            group_dn
+                            "No records found for the uid: {group_dn:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                        format!("Error removing users from group:{group_dn:?}: {err:?}"),
                         err,
                     ));
                 }
@@ -1481,14 +1476,14 @@ impl LdapClient {
 
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -1584,8 +1579,7 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }
@@ -1640,8 +1634,7 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }
@@ -1675,15 +1668,13 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
 fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
     let value = serde_value::to_value(SerializeWrapper(search_entry)).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })?;
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }

@@ -44,3 +44,11 @@ default = ["tls-native"]
 tls-native = ["ldap3/tls-native"]
 tls-rustls = ["ldap3/tls-rustls"]
 pool = ["dep:deadpool"]
+
+
+# Lint catlogue: https://rust-lang.github.io/rust-clippy/master/index.html
+[lints.clippy]
+all = {level = "warn", priority = -1}
+
+# Pedantic lints
+uninlined_format_args = "warn"
