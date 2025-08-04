@@ -7,10 +7,8 @@
 //!
 
 use chumsky::{
-    error::Rich,
-    extra,
-    prelude::{any, just, none_of},
-    IterParser, Parser,
+    error::Rich, extra, prelude::{any, just, none_of, one_of},
+    IterParser, Parser
 };
 use itertools::{EitherOrBoth, Itertools};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -198,9 +196,34 @@ fn simple_rdn_parser<'src>() -> impl Parser<'src, &'src str, SimpleRDN, extra::E
         // Consume the delimiting equals here too.
         .then_ignore(just('='));
 
+    // Special characters that must be escaped in DN values:
+    // https://ldapwiki.com/wiki/Wiki.jsp?page=DN%20Escape%20Values
+    //
+    // TODO: Leading and trailing spaces also should be escaped, but they cannot be experessed here.
+    let special = r##",\#+<>;"="##;
+
+    // Escaped special character.
+    // This correctly rejects escaped non-special characters, which is not allowed in LDAP.
+    //
+    // This does not remove the escape characters.
+    // That could be a feature worth investigating, but we would need to implement
+    // value escaping then too.
+    // For now this at least rejects unsound escapes.
+    let escaped = just('\\').then(one_of(special))
+        // This is needed to consolidate the different lengths of "tokens" here.
+        // This parser would output tuples of charts, where as we normally output single chars.
+        .to_slice();
+
     // Just making sure that this is not a multivalued rdn.
     // These we don't support.
-    let rdn_value = none_of("+=,").repeated().at_least(1).collect::<String>();
+    let rdn_value = none_of(special)
+        // Making this char a slice too to make the or() outputs agree.
+        .to_slice()
+        .or(escaped)
+        .repeated()
+        .at_least(1)
+        .to_slice()
+        .map(ToString::to_string);
 
     // Finally combine the RDN
     rdn_key
@@ -285,6 +308,27 @@ mod tests {
         let parsed_dn = simple_dn_parser().parse(EXAMPLE_DN).into_result().unwrap();
 
         assert_eq!(parsed_dn, example_simple_dn());
+    }
+
+    #[test]
+    fn parse_complex_dn() {
+        "CN=one+OTHER=two,OU=some,DC=thing".parse::<SimpleDN>()
+            .expect_err("Multivalued DN should be rejected.");
+    }
+
+    #[test]
+    fn parse_dn_escapes() -> anyhow::Result<()>{
+        let parsed = SimpleDN::from_str(r"CN=tea \+ milk \= milktea,OU=mixes,DC=odd\,domain")?;
+
+        let expected = SimpleDN { rdns: vec![
+            SimpleRDN {key: String::from("CN"), value: String::from("tea \\+ milk \\= milktea")},
+            SimpleRDN {key: String::from("OU"), value: String::from("mixes")},
+            SimpleRDN {key: String::from("DC"), value: String::from("odd\\,domain")},
+        ]};
+
+        assert_eq!(parsed, expected);
+
+        Ok(())
     }
 
     #[test]
