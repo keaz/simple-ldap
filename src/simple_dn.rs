@@ -5,7 +5,6 @@
 //! The LDAP spec formally allows you to include almost anything in a DN, but these features are
 //! rarely used. This simple DN representation covers the common cases, and is easy to work with.
 //!
-//! If you do need to handle more exotic DNs, have a look at the crate [`ldap_types`](https://docs.rs/ldap-types/latest/ldap_types/basic/struct.DistinguishedName.html).
 
 use chumsky::{
     error::Rich,
@@ -25,6 +24,16 @@ use thiserror::Error;
 ///
 /// Multivalued relative DNs and unprintable characters are not supported,
 /// and neither is the empty DN.
+///
+/// ```
+/// use simple_ldap::SimpleDN;
+/// use std::str::FromStr;
+///
+/// // Create a new DN from a string slice
+/// let dn = SimpleDN::from_str("CN=hong,OU=cha,DC=tea").unwrap();
+/// ```
+///
+/// If you do need to handle more exotic DNs, have a look at the crate [`ldap_types`](https://docs.rs/ldap-types/latest/ldap_types/basic/struct.DistinguishedName.html).
 #[derive(Debug, DeserializeFromStr, SerializeDisplay, Clone, PartialEq, Eq)]
 pub struct SimpleDN {
     /// The relative distinguished names of this DN.

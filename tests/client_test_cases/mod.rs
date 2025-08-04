@@ -44,11 +44,11 @@ use serde::Deserialize;
 use simple_ldap::{
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
-    Error, LdapClient, LdapConfig,
+    Error, LdapClient, LdapConfig, SimpleDN,
 };
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
-use std::{collections::HashSet, ops::DerefMut, sync::Once};
+use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
 use url::Url;
 use uuid::Uuid;
 
@@ -75,6 +75,7 @@ pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
 
 #[derive(Deserialize)]
 pub struct User {
+    pub dn: SimpleDN,
     pub uid: String,
     pub cn: String,
     pub sn: String,
@@ -94,8 +95,12 @@ pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(
         .await;
 
     let user = user.unwrap();
+
+    let dn = SimpleDN::from_str("uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com")?;
+
     assert_eq!(user.cn, "Sam");
     assert_eq!(user.sn, "Smith");
+    assert_eq!(user.dn, dn);
 
     Ok(())
 }
