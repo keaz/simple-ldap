@@ -96,6 +96,31 @@ impl PartialOrd for SimpleDN {
     }
 }
 
+/// Find the "maximal" common ancestor of two DNs, if any.
+/// Maximal here means that the returned DN is as long as possible.
+pub fn common_ancestor(left: &SimpleDN, right: &SimpleDN) -> Option<SimpleDN> {
+    let mut common_rdns = left.rdns
+        .iter()
+        .rev()
+        .zip(right.rdns.iter().rev())
+        .take_while(|(left, right)| left == right)
+        // Doesn't matter which one we take here as they are the same.
+        .map(|(left, _)| left.clone())
+        .collect_vec();
+
+    // Flip back to correct order.
+    // There would probably be a way to avoid this call, but it's not that expensive.
+    common_rdns.reverse();
+
+    if common_rdns.is_empty() {
+        // No common ancestry at all.
+        None
+    }
+    else {
+        Some(SimpleDN { rdns: common_rdns })
+    }
+}
+
 fn simple_dn_parser<'src>() -> impl Parser<'src, &'src str, SimpleDN, extra::Err<Rich<'src, char>>>
 {
     simple_rdn_parser()
@@ -481,5 +506,18 @@ mod tests {
 
         assert!(lesser.partial_cmp(&incomparable).is_none());
         assert!(incomparable.partial_cmp(&lesser).is_none());
+    }
+
+    #[test]
+    fn test_common_ancestor() -> anyhow::Result<()> {
+        let left = SimpleDN::from_str("CN=puerh,OU=post-fermented,DC=tea")?;
+        let right = SimpleDN::from_str("CN=liu an,OU=post-fermented,DC=tea")?;
+        let correct_ancestor = SimpleDN::from_str("OU=post-fermented,DC=tea")?;
+
+        let found_ancestor = common_ancestor(&left, &right);
+
+        assert_eq!(found_ancestor, Some(correct_ancestor));
+
+        Ok(())
     }
 }
