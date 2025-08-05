@@ -29,7 +29,7 @@
 //!
 //! ```no_run
 //! use simple_ldap::{
-//!     LdapClient, LdapConfig,
+//!     LdapClient, LdapConfig, SimpleDN,
 //!     filter::EqFilter,
 //!     ldap3::Scope
 //! };
@@ -39,9 +39,11 @@
 //! // A type for deserializing the search result into.
 //! #[derive(Debug, Deserialize)]
 //! struct User {
-//!     uid: String,
-//!     cn: String,
-//!     sn: String,
+//!     // // A convenience type for Distinguished Names.
+//!     pub dn: SimpleDN,
+//!     pub uid: String,
+//!     pub cn: String,
+//!     pub sn: String,
 //! }
 //!
 //!
@@ -61,7 +63,7 @@
 //!         "ou=people,dc=example,dc=com",
 //!         Scope::OneLevel,
 //!         &name_filter,
-//!         &vec!["cn", "sn", "uid"],
+//!         &vec!["dn", "cn", "sn", "uid"],
 //!     ).await.unwrap();
 //! }
 //! ```
@@ -77,19 +79,23 @@
 //! use serde_with::serde_as;
 //! use serde_with::OneOrMany;
 //!
+//! use simple_ldap::SimpleDN;
+//!
 //! // A type for deserializing the search result into.
 //! #[serde_as] // serde_with for multiple values
 //! #[derive(Debug, Deserialize)]
 //! struct User {
-//!     // DN is always returned as single value string, whether you ask it or not.
-//!     dn: String,
-//!     cn: String,
+//!     // DN is always returned, whether you ask it or not.
+//!     // You could deserialize it as a plain String, but using
+//!     // SimpleDN gives you type-safety.
+//!     pub dn: SimpleDN,
+//!     pub cn: String,
 //!     // LDAP and Rust naming conventions differ.
 //!     // You can make up for the difference by using serde's renaming annotations.
 //!     #[serde(rename = "mayNotExist")]
-//!     may_not_exist: Option<String>,
+//!     pub may_not_exist: Option<String>,
 //!     #[serde_as(as = "OneOrMany<_>")] // serde_with for multiple values
-//!     multivalued_attribute: Vec<String>
+//!     pub multivalued_attribute: Vec<String>
 //! }
 //! ```
 //!
@@ -127,13 +133,15 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter
+    iter,
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
 use futures::{executor::block_on, stream, Stream, StreamExt};
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults}, Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry, SearchStream, StreamState
+    adapters::{Adapter, EntriesOnly, PagedResults},
+    Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
+    SearchStream, StreamState,
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
@@ -144,6 +152,12 @@ use url::Url;
 pub mod filter;
 #[cfg(feature = "pool")]
 pub mod pool;
+pub mod simple_dn;
+// Export the main type of the module right here in the root.
+pub use simple_dn::SimpleDN;
+
+// Would likely be better if we could avoid re-exporting this.
+// I suspect it's only used in some configs?
 pub extern crate ldap3;
 
 const LDAP_ENTRY_DN: &str = "entryDN";
@@ -154,6 +168,7 @@ const NO_SUCH_RECORD: u32 = 32;
 pub struct LdapConfig {
     pub ldap_url: Url,
     /// DistinguishedName, aka the "username" to use for the connection.
+    // Perhaps we don't want to use SimpleDN here, as it would make it impossible to bind to weird DNs.
     pub bind_dn: String,
     #[debug(skip)] // We don't want to print passwords.
     pub bind_password: String,
@@ -306,12 +321,11 @@ impl LdapClient {
             .map_err(|e| Error::Query("Could not find user for authentication".into(), e))?;
 
         if data.is_empty() {
-            return Err(Error::NotFound(format!("No record found {:?}", uid)));
+            return Err(Error::NotFound(format!("No record found {uid:?}")));
         }
         if data.len() > 1 {
             return Err(Error::MultipleResults(format!(
-                "Found multiple records for uid {:?}",
-                uid
+                "Found multiple records for uid {uid:?}"
             )));
         }
 
@@ -332,11 +346,11 @@ impl LdapClient {
             .simple_bind(entry_dn, password)
             .await
             .map_err(|_| {
-                Error::AuthenticationFailed(format!("Error authenticating user: {:?}", uid))
+                Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
             })
             .and_then(|r| {
                 r.success().map_err(|_| {
-                    Error::AuthenticationFailed(format!("Error authenticating user: {:?}", uid))
+                    Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
                 })
             })
             .and(Ok(()))
@@ -355,14 +369,14 @@ impl LdapClient {
             .await;
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -528,7 +542,6 @@ impl LdapClient {
         to_multi_value(search_entry)
     }
 
-
     ///
     /// This method is used to search multiple records from the LDAP server. The search is performed using the provided filter.
     /// Method will return a Stream. The stream will lazily fetch the results, resulting in a smaller
@@ -633,16 +646,17 @@ impl LdapClient {
         scope: Scope,
         filter: &'a F,
         attributes: &'a Vec<&'a str>,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
-    {
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
         let search_stream = self
             .ldap
             .streaming_search(base, scope, filter.filter().as_str(), attributes)
             .await
-            .map_err(|ldap_error| Error::Query(
-                format!("Error searching for record: {ldap_error:?}"),
-                ldap_error,
-            ))?;
+            .map_err(|ldap_error| {
+                Error::Query(
+                    format!("Error searching for record: {ldap_error:?}"),
+                    ldap_error,
+                )
+            })?;
 
         to_native_stream(search_stream)
     }
@@ -749,8 +763,7 @@ impl LdapClient {
         filter: &'a F,
         attributes: &'a Vec<&'a str>,
         page_size: i32,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error>
-    {
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
         let adapters: Vec<Box<dyn Adapter<_, _>>> = vec![
             Box::new(EntriesOnly::new()),
             Box::new(PagedResults::new(page_size)),
@@ -759,14 +772,15 @@ impl LdapClient {
             .ldap
             .streaming_search_with(adapters, base, scope, filter.filter().as_str(), attributes)
             .await
-            .map_err(|ldap_error| Error::Query(
-                format!("Error searching for record: {ldap_error:?}"),
-                ldap_error,
-            ))?;
+            .map_err(|ldap_error| {
+                Error::Query(
+                    format!("Error searching for record: {ldap_error:?}"),
+                    ldap_error,
+                )
+            })?;
 
         to_native_stream(search_stream)
     }
-
 
     ///
     /// Create a new record in the LDAP server. The record will be created in the provided base DN.
@@ -819,11 +833,11 @@ impl LdapClient {
         base: &str,
         data: Vec<(&str, HashSet<&str>)>,
     ) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -831,7 +845,7 @@ impl LdapClient {
 
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -899,12 +913,12 @@ impl LdapClient {
         data: Vec<Mod<&str>>,
         new_uid: Option<&str>,
     ) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
 
         let res = self.ldap.modify(dn.as_str(), data).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error updating record: {:?}", err),
+                format!("Error updating record: {err:?}"),
                 err,
             ));
         }
@@ -915,14 +929,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            uid
+                            "No records found for the uid: {uid:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error updating record: {:?}", err),
+                        format!("Error updating record: {err:?}"),
                         err,
                     ));
                 }
@@ -935,7 +948,7 @@ impl LdapClient {
 
         let new_uid = new_uid.unwrap();
         if !uid.eq_ignore_ascii_case(new_uid) {
-            let new_dn = format!("uid={}", new_uid);
+            let new_dn = format!("uid={new_uid}");
             let dn_update = self
                 .ldap
                 .modifydn(dn.as_str(), new_dn.as_str(), true, None)
@@ -943,7 +956,7 @@ impl LdapClient {
             if let Err(err) = dn_update {
                 error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for record {:?}", uid),
+                    format!("Failed to update dn for record {uid:?}"),
                     err,
                 ));
             }
@@ -952,7 +965,7 @@ impl LdapClient {
             if let Err(err) = dn_update {
                 error!("Failed to update dn for record {:?} error {:?}", uid, err);
                 return Err(Error::Update(
-                    format!("Failed to update dn for record {:?}", uid),
+                    format!("Failed to update dn for record {uid:?}"),
                     err,
                 ));
             }
@@ -1000,12 +1013,12 @@ impl LdapClient {
     /// }
     /// ```
     pub async fn delete(&mut self, uid: &str, base: &str) -> Result<(), Error> {
-        let dn = format!("uid={},{}", uid, base);
+        let dn = format!("uid={uid},{base}");
         let delete = self.ldap.delete(dn.as_str()).await;
 
         if let Err(err) = delete {
             return Err(Error::Delete(
-                format!("Error deleting record: {:?}", err),
+                format!("Error deleting record: {err:?}"),
                 err,
             ));
         }
@@ -1015,14 +1028,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            uid
+                            "No records found for the uid: {uid:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Delete(
-                        format!("Error deleting record: {:?}", err),
+                        format!("Error deleting record: {err:?}"),
                         err,
                     ));
                 }
@@ -1073,7 +1085,7 @@ impl LdapClient {
         group_ou: &str,
         description: &str,
     ) -> Result<(), Error> {
-        let dn = format!("cn={},{}", group_name, group_ou);
+        let dn = format!("cn={group_name},{group_ou}");
 
         let data = vec![
             ("objectClass", HashSet::from(["top", "groupOfNames"])),
@@ -1084,7 +1096,7 @@ impl LdapClient {
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error saving record: {:?}", err),
+                format!("Error saving record: {err:?}"),
                 err,
             ));
         }
@@ -1092,7 +1104,7 @@ impl LdapClient {
 
         if let Err(err) = save {
             return Err(Error::Create(
-                format!("Error creating group: {:?}", err),
+                format!("Error creating group: {err:?}"),
                 err,
             ));
         }
@@ -1149,7 +1161,7 @@ impl LdapClient {
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error updating record: {:?}", err),
+                format!("Error updating record: {err:?}"),
                 err,
             ));
         }
@@ -1160,14 +1172,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            group_dn
+                            "No records found for the uid: {group_dn:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error updating record: {:?}", err),
+                        format!("Error updating record: {err:?}"),
                         err,
                     ));
                 }
@@ -1249,14 +1260,14 @@ impl LdapClient {
 
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -1377,7 +1388,7 @@ impl LdapClient {
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
             return Err(Error::Update(
-                format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                format!("Error removing users from group:{group_dn:?}: {err:?}"),
                 err,
             ));
         }
@@ -1388,14 +1399,13 @@ impl LdapClient {
                 LdapError::LdapResult { result } => {
                     if result.rc == NO_SUCH_RECORD {
                         return Err(Error::NotFound(format!(
-                            "No records found for the uid: {:?}",
-                            group_dn
+                            "No records found for the uid: {group_dn:?}"
                         )));
                     }
                 }
                 _ => {
                     return Err(Error::Update(
-                        format!("Error removing users from group:{:?}: {:?}", group_dn, err),
+                        format!("Error removing users from group:{group_dn:?}: {err:?}"),
                         err,
                     ));
                 }
@@ -1466,14 +1476,14 @@ impl LdapClient {
 
         if let Err(error) = search {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
         let result = search.unwrap().success();
         if let Err(error) = result {
             return Err(Error::Query(
-                format!("Error searching for record: {:?}", error),
+                format!("Error searching for record: {error:?}"),
                 error,
             ));
         }
@@ -1569,8 +1579,7 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }
@@ -1625,8 +1634,7 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }
@@ -1660,15 +1668,13 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
 fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
     let value = serde_value::to_value(SerializeWrapper(search_entry)).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })?;
 
     T::deserialize(value).map_err(|err| {
         Error::Mapping(format!(
-            "Error converting search result to object, {:?}",
-            err
+            "Error converting search result to object, {err:?}"
         ))
     })
 }
@@ -1702,7 +1708,6 @@ where
 {
     pub search_stream: SearchStream<'a, S, A>,
 }
-
 
 impl<'a, S, A> Drop for StreamDropWrapper<'a, S, A>
 where
@@ -1753,11 +1758,11 @@ where
         match self.search_stream.state() {
             // Stream processed to the end, no need to cancel the operation.
             // This should be the common case.
-            StreamState::Done |  StreamState::Closed => (),
+            StreamState::Done | StreamState::Closed => (),
             StreamState::Error => {
                 error!("Stream is in Error state. Not trying to cancel it as it could do more harm than good.");
                 ()
-            },
+            }
             StreamState::Fresh | StreamState::Active => {
                 info!("Stream is still open. Issuing cancellation to the server.");
                 let msgid = self.search_stream.ldap_handle().last_id();
@@ -1775,36 +1780,40 @@ where
     }
 }
 
-
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
-fn to_native_stream<'a, S, A>(ldap3_stream: SearchStream<'a, S, A>)
--> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
+fn to_native_stream<'a, S, A>(
+    ldap3_stream: SearchStream<'a, S, A>,
+) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
 {
     // This will handle stream cleanup.
-    let stream_wrapper = StreamDropWrapper {search_stream: ldap3_stream};
+    let stream_wrapper = StreamDropWrapper {
+        search_stream: ldap3_stream,
+    };
 
     // Produce the steam itself by unfolding.
-    let stream = stream::try_unfold(stream_wrapper, async | mut search |
-        {
-            match search.search_stream.next().await {
-                // In the middle of the stream. Produce the next result.
-                Ok(Some(result_entry)) => Ok(Some((Record{ search_entry: SearchEntry::construct(result_entry)}, search))),
-                // Stream is done.
-                Ok(None) => Ok(None),
-                Err(ldap_error) => Err(Error::Query(
-                    format!("Error getting next record: {ldap_error:?}"),
-                    ldap_error,
-                )),
-            }
+    let stream = stream::try_unfold(stream_wrapper, async |mut search| {
+        match search.search_stream.next().await {
+            // In the middle of the stream. Produce the next result.
+            Ok(Some(result_entry)) => Ok(Some((
+                Record {
+                    search_entry: SearchEntry::construct(result_entry),
+                },
+                search,
+            ))),
+            // Stream is done.
+            Ok(None) => Ok(None),
+            Err(ldap_error) => Err(Error::Query(
+                format!("Error getting next record: {ldap_error:?}"),
+                ldap_error,
+            )),
         }
-    );
+    });
 
     Ok(stream)
 }
-
 
 /// The Record struct is used to map the search result to a struct.
 /// The Record struct has a method to_record which will map the search result to a struct.

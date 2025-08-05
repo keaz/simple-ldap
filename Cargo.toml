@@ -6,19 +6,22 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "7.0.1"
+version = "7.1.0"
 edition = "2024"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+chumsky = "0.10.1"
 deadpool = { version = "0.12.2", optional = true }
-derive_more = { version = "2.0.1", features = ["debug"] }
+derive_more = { version = "2.0.1", features = ["debug", "display"] }
 futures = "0.3.31"
+itertools = "0.14.0"
 ldap3 = { version = "0.11.5", default-features = false }
 serde = { version = "1.0.219", features = ["derive"] }
 serde-value = "0.7.0"
+serde_with = "3.12.0"
 thiserror = "2.0.12"
 tracing = "0.1.41"
 url = "2.5.4"
@@ -34,9 +37,18 @@ tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 serde_with = "3.12.0"
 tracing-subscriber = "0.3.19"
+serde_json = "1.0.142"
 
 [features]
 default = ["tls-native"]
 tls-native = ["ldap3/tls-native"]
 tls-rustls = ["ldap3/tls-rustls"]
 pool = ["dep:deadpool"]
+
+
+# Lint catlogue: https://rust-lang.github.io/rust-clippy/master/index.html
+[lints.clippy]
+all = {level = "warn", priority = -1}
+
+# Pedantic lints
+uninlined_format_args = "warn"

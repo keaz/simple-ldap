@@ -28,7 +28,7 @@ There are plenty more examples in the [documentation](https://docs.rs/simple-lda
 
 ```rust,no_run
 use simple_ldap::{
-    LdapClient, LdapConfig,
+    LdapClient, LdapConfig, SimpleDN,
     filter::EqFilter,
     ldap3::Scope
 };
@@ -41,11 +41,12 @@ use serde_with::OneOrMany;
 #[serde_as] // serde_with for multiple values
 #[derive(Debug, Deserialize)]
 struct User {
-    uid: String,
-    cn: String,
-    sn: String,
+    pub dn: SimpleDN,
+    pub uid: String,
+    pub cn: String,
+    pub sn: String,
     #[serde_as(as = "OneOrMany<_>")]
-    addresses: Vec<String>,
+    pub addresses: Vec<String>,
 }
 
 
@@ -65,7 +66,7 @@ async fn main(){
         "ou=people,dc=example,dc=com",
         Scope::OneLevel,
         &name_filter,
-        &vec!["cn", "sn", "uid","addresses"],
+        &vec!["dn", "cn", "sn", "uid","addresses"],
     ).await.unwrap();
 }
 ```
