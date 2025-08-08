@@ -55,9 +55,9 @@ async fn return_stream<'a>(client: &'a mut LdapClient) -> impl Stream<Item = Res
   let local_attrs = vec!["cn"];
 
   client.streaming_search(
-      local_base,
+      &local_base,
       Scope::OneLevel,
-      name_filter,
+      &name_filter,
       local_attrs
   ).await.unwrap()
 }

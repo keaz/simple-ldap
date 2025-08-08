@@ -632,7 +632,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search<'a, B, F, FR, A, S>(
+    pub async fn streaming_search<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -640,23 +640,21 @@ impl LdapClient {
         //
         // The lifetime is needed to guarantee that the client is not returned to the pool before
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
-        // just makes copy. So this lifetime is here just to enforce correct pool usage.
+        // just makes a copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: B,
+        base: &str,
         scope: Scope,
-        filter: FR,
+        filter: &F,
         attributes: A,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, B, F, FR, A, S>, Error>
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F, A, S>, Error>
     where
-        B: AsRef<str>,
         F: Filter,
-        FR: AsRef<F>,
         A: AsRef<[S]> + Send + Sync + 'a,
         S: AsRef<str> + Send + Sync + 'a
     {
         let search_stream = self
             .ldap
-            .streaming_search(base.as_ref(), scope, filter.as_ref().filter().as_str(), attributes)
+            .streaming_search(base.as_ref(), scope, filter.filter().as_str(), attributes)
             .await
             .map_err(|ldap_error| {
                 Error::Query(
@@ -1315,7 +1313,7 @@ impl LdapClient {
             .for_each(|eq| or_filter.add(Box::new(eq)));
 
         let result = self
-            .streaming_search(base_dn, scope, or_filter, attributes)
+            .streaming_search(base_dn, scope, &or_filter, attributes)
             .await;
 
         let mut members = Vec::new();
