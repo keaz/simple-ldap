@@ -632,7 +632,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search<'a, F: Filter>(
+    pub async fn streaming_search<'a, B, F, FR, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -642,14 +642,21 @@ impl LdapClient {
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
         // just makes copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: &'a str,
+        base: B,
         scope: Scope,
-        filter: &'a F,
-        attributes: &'a Vec<&'a str>,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
+        filter: FR,
+        attributes: A,
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, B, F, FR, A, S>, Error>
+    where
+        B: AsRef<str>,
+        F: Filter,
+        FR: AsRef<F>,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a
+    {
         let search_stream = self
             .ldap
-            .streaming_search(base, scope, filter.filter().as_str(), attributes)
+            .streaming_search(base.as_ref(), scope, filter.as_ref().filter().as_str(), attributes)
             .await
             .map_err(|ldap_error| {
                 Error::Query(
@@ -1308,7 +1315,7 @@ impl LdapClient {
             .for_each(|eq| or_filter.add(Box::new(eq)));
 
         let result = self
-            .streaming_search(base_dn, scope, &or_filter, attributes)
+            .streaming_search(base_dn, scope, or_filter, attributes)
             .await;
 
         let mut members = Vec::new();
@@ -1783,7 +1790,7 @@ where
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
 fn to_native_stream<'a, S, A>(
     ldap3_stream: SearchStream<'a, S, A>,
-) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
+) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,

@@ -63,6 +63,13 @@ impl Filter for AndFilter {
     }
 }
 
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<AndFilter> for AndFilter {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 /// The `OrFilter` struct represents an OR filter.
 #[derive(Default)]
 pub struct OrFilter {
@@ -118,6 +125,13 @@ impl Filter for OrFilter {
     }
 }
 
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<OrFilter> for OrFilter {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 /// The `EqFilter` struct represents an equality filter.
 pub struct EqFilter {
     attribute: String,
@@ -149,6 +163,13 @@ impl Filter for EqFilter {
     }
 }
 
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<EqFilter> for EqFilter {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 /// The `NotFilter` struct represents a NOT filter.
 /// This filter represents the negation of another filter. This is equal to LDAP `!` operator.
 pub struct NotFilter {
@@ -176,6 +197,13 @@ impl NotFilter {
 impl Filter for NotFilter {
     fn filter(&self) -> String {
         format!("(!{})", self.filter.filter())
+    }
+}
+
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<NotFilter> for NotFilter {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 
@@ -228,6 +256,13 @@ impl Filter for LikeFilter {
     }
 }
 
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<LikeFilter> for LikeFilter {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 /// The `ContainsFilter` struct represents a CONTAINS filter.
 /// This generates a ldap filter that checks if the value is contained in the attribute.
 pub struct ContainsFilter {
@@ -257,6 +292,13 @@ impl ContainsFilter {
 impl Filter for ContainsFilter {
     fn filter(&self) -> String {
         format!("({}=*{}*)", self.attribute, self.value)
+    }
+}
+
+// All filters should have a reflexive `AsRef` implementation.
+impl AsRef<ContainsFilter> for ContainsFilter {
+    fn as_ref(&self) -> &Self {
+        self
     }
 }
 
