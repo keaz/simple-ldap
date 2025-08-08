@@ -632,7 +632,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search<'a, F: Filter>(
+    pub async fn streaming_search<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -640,13 +640,18 @@ impl LdapClient {
         //
         // The lifetime is needed to guarantee that the client is not returned to the pool before
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
-        // just makes copy. So this lifetime is here just to enforce correct pool usage.
+        // just makes a copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: &'a str,
+        base: &str,
         scope: Scope,
-        filter: &'a F,
-        attributes: &'a Vec<&'a str>,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
+        filter: &F,
+        attributes: A,
+    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F, A, S>, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a
+    {
         let search_stream = self
             .ldap
             .streaming_search(base, scope, filter.filter().as_str(), attributes)
@@ -1783,7 +1788,7 @@ where
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
 fn to_native_stream<'a, S, A>(
     ldap3_stream: SearchStream<'a, S, A>,
-) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
+) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
