@@ -654,7 +654,7 @@ impl LdapClient {
     {
         let search_stream = self
             .ldap
-            .streaming_search(base.as_ref(), scope, filter.filter().as_str(), attributes)
+            .streaming_search(base, scope, filter.filter().as_str(), attributes)
             .await
             .map_err(|ldap_error| {
                 Error::Query(
