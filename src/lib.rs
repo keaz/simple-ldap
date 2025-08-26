@@ -1254,22 +1254,28 @@ impl LdapClient {
     ///
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = client.get_members::<User>(
+    ///     let members: Vec<User> = client.get_members(
     ///         "cn=test_group,ou=groups,dc=example,dc=com",
     ///         "ou=people,dc=example,dc=com",
     ///         Scope::OneLevel,
-    ///         &vec!["cn", "sn", "uid"]
-    ///     ).await;
+    ///         vec!["cn", "sn", "uid"]
+    ///     ).await
+    ///     .unwrap();
     /// }
     /// ```
     ///
-    pub async fn get_members<T: for<'a> serde::Deserialize<'a>>(
+    pub async fn get_members<'a, A, S, T>(
         &mut self,
         group_dn: &str,
         base_dn: &str,
         scope: Scope,
-        attributes: &Vec<&str>,
-    ) -> Result<Vec<T>, Error> {
+        attributes: A,
+    ) -> Result<Vec<T>, Error>
+    where
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+        T: for<'de> serde::Deserialize<'de>
+    {
         let search = self
             .ldap
             .search(

@@ -390,7 +390,7 @@ pub async fn test_delete<Client: DerefMut<Target = LdapClient>>(
     client.create(uid.as_str(), base.as_str(), data).await?;
 
     // This is what we are really testing.
-    let _result = client.delete(uid.as_str(), base.as_str()).await?;
+    client.delete(uid.as_str(), base.as_str()).await?;
 
     Ok(())
 }
@@ -407,18 +407,16 @@ pub async fn test_no_record_delete<Client: DerefMut<Target = LdapClient>>(
     assert!(result.is_err());
     let er = result.err().unwrap();
     match er {
-        Error::NotFound(_) => assert!(true),
-        _ => assert!(false),
+        Error::NotFound(_) => Ok(()),
+        _ => Err(anyhow!("Unknown error")),
     }
-
-    Ok(())
 }
 
 pub async fn test_create_group<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name = append_random_id("test_group");
-    let _result = client
+    client
         .create_group(name.as_str(), "dc=example,dc=com", "Some Description")
         .await?;
 
@@ -474,8 +472,8 @@ pub async fn test_get_members<Client: DerefMut<Target = LdapClient>>(
         .await?;
 
     // This is what we are testing.
-    let users = client
-        .get_members::<User>(
+    let users: Vec<User> = client
+        .get_members(
             group_dn.as_str(),
             group_ou.as_str(),
             Scope::Subtree,
@@ -604,7 +602,7 @@ pub fn ldap_config() -> anyhow::Result<LdapConfig> {
 ///
 /// It's perhaps best not to overuse this, as it's quite verbose.
 /// You can add it to the start of test you wish to investigate.
-fn enable_tracing_subscriber() -> () {
+fn enable_tracing_subscriber() {
     static ONCE: Once = Once::new();
 
     // Tests are run in parallel and might try to set the subscriber multiple times.
