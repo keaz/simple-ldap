@@ -1999,7 +1999,7 @@ mod tests {
         #[derive(Deserialize)]
         struct TestMultivalueBinary {
             pub uuids: Uuid,
-            pub _key1: String,
+            pub key1: String,
         }
 
         let (bytes, correct_string_representation) = get_binary_uuid();
