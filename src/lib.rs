@@ -132,8 +132,7 @@
 //!
 
 use std::{
-    collections::{HashMap, HashSet},
-    iter,
+    collections::{HashMap, HashSet}, fmt, iter
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
@@ -611,7 +610,7 @@ impl LdapClient {
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &attributes
+    ///         attributes
     ///     ).await.unwrap();
     ///
     ///     // The returned stream is not Unpin, so you may need to pin it to use certain operations,
@@ -646,7 +645,7 @@ impl LdapClient {
         scope: Scope,
         filter: &F,
         attributes: A,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F, A, S>, Error>
+    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
     where
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
@@ -737,7 +736,7 @@ impl LdapClient {
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &attributes,
+    ///         attributes,
     ///         200 // The pagesize
     ///     ).await.unwrap();
     ///
@@ -753,7 +752,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search_paged<'a, F: Filter>(
+    pub async fn streaming_search_paged<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -763,13 +762,19 @@ impl LdapClient {
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
         // just makes copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: &'a str,
+        base: &str,
         scope: Scope,
-        filter: &'a F,
-        attributes: &'a Vec<&'a str>,
+        filter: &F,
+        attributes: A,
         page_size: i32,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
-        let adapters: Vec<Box<dyn Adapter<_, _>>> = vec![
+    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    where
+        F: Filter,
+        // PagedResults requires Clone and Debug too.
+        A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
+        S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a
+    {
+        let adapters: Vec<Box<dyn Adapter<'a, S, A>>> = vec![
             Box::new(EntriesOnly::new()),
             Box::new(PagedResults::new(page_size)),
         ];
