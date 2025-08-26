@@ -132,20 +132,21 @@
 //!
 
 use std::{
-    collections::{HashMap, HashSet}, fmt, iter
+    collections::{HashMap, HashSet},
+    fmt, iter,
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
-use futures::{executor::block_on, stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, executor::block_on, stream};
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults},
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
     SearchStream, StreamState,
+    adapters::{Adapter, EntriesOnly, PagedResults},
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, warn, Level};
+use tracing::{Level, debug, error, info, instrument, warn};
 use url::Url;
 
 pub mod filter;
@@ -344,9 +345,7 @@ impl LdapClient {
         self.ldap
             .simple_bind(entry_dn, password)
             .await
-            .map_err(|_| {
-                Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
-            })
+            .map_err(|_| Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}")))
             .and_then(|r| {
                 r.success().map_err(|_| {
                     Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
@@ -365,7 +364,7 @@ impl LdapClient {
     where
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
-        S: AsRef<str> + Send + Sync + 'a
+        S: AsRef<str> + Send + Sync + 'a,
     {
         let search = self
             .ldap
@@ -478,7 +477,7 @@ impl LdapClient {
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
         S: AsRef<str> + Send + Sync + 'a,
-        T: for<'de> serde::Deserialize<'de>
+        T: for<'de> serde::Deserialize<'de>,
     {
         let search_entry = self.search_inner(base, scope, filter, attributes).await?;
         to_value(search_entry)
@@ -661,7 +660,7 @@ impl LdapClient {
     where
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
-        S: AsRef<str> + Send + Sync + 'a
+        S: AsRef<str> + Send + Sync + 'a,
     {
         let search_stream = self
             .ldap
@@ -784,7 +783,7 @@ impl LdapClient {
         F: Filter,
         // PagedResults requires Clone and Debug too.
         A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
-        S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a
+        S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a,
     {
         let adapters: Vec<Box<dyn Adapter<'a, S, A>>> = vec![
             Box::new(EntriesOnly::new()),
@@ -858,18 +857,12 @@ impl LdapClient {
         let dn = format!("uid={uid},{base}");
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let save = save.unwrap().success();
 
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let res = save.unwrap();
         debug!("Sucessfully created record result: {:?}", res);
@@ -1117,18 +1110,12 @@ impl LdapClient {
         ];
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let save = save.unwrap().success();
 
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error creating group: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error creating group: {err:?}"), err));
         }
         let res = save.unwrap();
         debug!("Sucessfully created group result: {:?}", res);
@@ -1274,7 +1261,7 @@ impl LdapClient {
     where
         A: AsRef<[S]> + Send + Sync + 'a,
         S: AsRef<str> + Send + Sync + 'a,
-        T: for<'de> serde::Deserialize<'de>
+        T: for<'de> serde::Deserialize<'de>,
     {
         let search = self
             .ldap
@@ -1605,11 +1592,8 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
 
     let value = serde_value::Value::Map(all_fields);
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 #[instrument(level = Level::DEBUG)]
@@ -1660,11 +1644,8 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
 
     let value = serde_value::Value::Map(all_fields);
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 fn map_to_multi_value(attra_value: Vec<String>) -> serde_value::Value {
@@ -1695,16 +1676,11 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
 #[instrument(level = Level::DEBUG)]
 fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
     let value = serde_value::to_value(SerializeWrapper(search_entry)).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
+        Error::Mapping(format!("Error converting search result to object, {err:?}"))
     })?;
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
@@ -1777,9 +1753,10 @@ where
             Ok(_) => (), // All good.
             // This is returned if the stream is cancelled in the middle.
             // Which is fine for us.
-            Err(LdapError::LdapResult {result: LdapResult{rc: return_code, ..}})
-                // https://ldap.com/ldap-result-code-reference-client-side-result-codes/#rc-userCanceled
-                if return_code == 88 => (),
+            // https://ldap.com/ldap-result-code-reference-client-side-result-codes/#rc-userCanceled
+            Err(LdapError::LdapResult {
+                result: LdapResult { rc: 88, .. },
+            }) => (),
             Err(finish_err) => error!("The stream finished with an error: {finish_err}"),
         }
 
@@ -1788,8 +1765,9 @@ where
             // This should be the common case.
             StreamState::Done | StreamState::Closed => (),
             StreamState::Error => {
-                error!("Stream is in Error state. Not trying to cancel it as it could do more harm than good.");
-                ()
+                error!(
+                    "Stream is in Error state. Not trying to cancel it as it could do more harm than good."
+                );
             }
             StreamState::Fresh | StreamState::Active => {
                 info!("Stream is still open. Issuing cancellation to the server.");
@@ -1927,8 +1905,8 @@ mod tests {
     use super::*;
     use anyhow::anyhow;
     use serde::Deserialize;
-    use serde_with::serde_as;
     use serde_with::OneOrMany;
+    use serde_with::serde_as;
     use uuid::Uuid;
 
     #[test]
@@ -2021,7 +1999,7 @@ mod tests {
         #[derive(Deserialize)]
         struct TestMultivalueBinary {
             pub uuids: Uuid,
-            pub key1: String,
+            pub _key1: String,
         }
 
         let (bytes, correct_string_representation) = get_binary_uuid();

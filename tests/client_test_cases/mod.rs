@@ -38,20 +38,20 @@
 //!
 //! When calling these with plain `LdapClient`, wrap it in a `Box`.
 
+use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
 use rand::Rng;
 use serde::Deserialize;
+use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
-use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
 use url::Url;
 use uuid::Uuid;
-use anyhow::anyhow;
 
 use simple_ldap::{
+    Error, LdapClient, LdapConfig, SimpleDN,
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
-    Error, LdapClient, LdapConfig, SimpleDN,
 };
 
 pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
@@ -98,7 +98,8 @@ pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(
 
     let user = user.unwrap();
 
-    let dn = SimpleDN::from_str("uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com")?;
+    let dn =
+        SimpleDN::from_str("uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com")?;
 
     assert_eq!(user.cn, "Sam");
     assert_eq!(user.sn, "Smith");
@@ -282,8 +283,7 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
 
 pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
-) -> anyhow::Result<()>
-{
+) -> anyhow::Result<()> {
     enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
@@ -300,8 +300,9 @@ pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
         )
         .await?;
 
-    let count = stream.and_then(async |record| record.to_record())
-        .try_fold(0, async |sum, _ :User| Ok(sum + 1))
+    let count = stream
+        .and_then(async |record| record.to_record())
+        .try_fold(0, async |sum, _: User| Ok(sum + 1))
         .await?;
 
     assert_eq!(count, 3);
@@ -309,11 +310,9 @@ pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-
 pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
-) -> anyhow::Result<()>
-{
+) -> anyhow::Result<()> {
     // Here we always want to trace.
     enable_tracing_subscriber();
 
@@ -341,12 +340,9 @@ pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-
-
 pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
-) -> anyhow::Result<()>
-{
+) -> anyhow::Result<()> {
     enable_tracing_subscriber();
 
     let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
@@ -360,8 +356,9 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
         )
         .await?;
 
-    let count = stream.and_then(async |record| record.to_record())
-        .try_fold(0, async |sum, _ :User| Ok(sum + 1))
+    let count = stream
+        .and_then(async |record| record.to_record())
+        .try_fold(0, async |sum, _: User| Ok(sum + 1))
         .await?;
 
     assert_eq!(count, 0);
@@ -560,7 +557,6 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-
 /***************
  *  Utilities  *
  ***************/
@@ -611,6 +607,5 @@ fn enable_tracing_subscriber() {
             .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
             .with_max_level(Level::TRACE)
             .init();
-        }
-    );
+    });
 }

@@ -9,7 +9,7 @@ use std::{future::Future, num::NonZeroUsize};
 use anyhow::Context;
 use client_test_cases::ldap_config;
 use futures::try_join;
-use simple_ldap::pool::{build_connection_pool, Object, Pool};
+use simple_ldap::pool::{Object, Pool, build_connection_pool};
 
 /// A convenience function for building a connection pool for tests.
 async fn build_pool() -> anyhow::Result<Pool> {
