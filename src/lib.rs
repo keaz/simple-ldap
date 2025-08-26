@@ -59,11 +59,11 @@
 //!     let mut client = LdapClient::new(ldap_config).await.unwrap();
 //!     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
 //!     let user: User = client
-//!         .search::<User>(
+//!         .search(
 //!         "ou=people,dc=example,dc=com",
 //!         Scope::OneLevel,
 //!         &name_filter,
-//!         &vec!["dn", "cn", "sn", "uid"],
+//!         vec!["dn", "cn", "sn", "uid"],
 //!     ).await.unwrap();
 //! }
 //! ```
@@ -355,13 +355,18 @@ impl LdapClient {
             .and(Ok(()))
     }
 
-    async fn search_innter(
+    async fn search_inner<'a, F, A, S>(
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &(impl Filter + ?Sized),
-        attributes: &Vec<&str>,
-    ) -> Result<SearchEntry, Error> {
+        filter: &F,
+        attributes: A,
+    ) -> Result<SearchEntry, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a
+    {
         let search = self
             .ldap
             .search(base, scope, filter.filter().as_str(), attributes)
@@ -451,24 +456,31 @@ impl LdapClient {
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let user_result = client
-    ///         .search::<User>(
+    ///     let user_result: User = client
+    ///         .search(
     ///         "ou=people,dc=example,dc=com",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &vec!["cn", "sn", "uid"],
-    ///     ).await;
+    ///         vec!["cn", "sn", "uid"],
+    ///     ).await
+    ///     .unwrap();
     /// }
     /// ```
     ///
-    pub async fn search<T: for<'a> serde::Deserialize<'a>>(
+    pub async fn search<'a, F, A, S, T>(
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &impl Filter,
-        attributes: &Vec<&str>,
-    ) -> Result<T, Error> {
-        let search_entry = self.search_innter(base, scope, filter, attributes).await?;
+        filter: &F,
+        attributes: A,
+    ) -> Result<T, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+        T: for<'de> serde::Deserialize<'de>
+    {
+        let search_entry = self.search_inner(base, scope, filter, attributes).await?;
         to_value(search_entry)
     }
 
@@ -537,7 +549,7 @@ impl LdapClient {
         filter: &impl Filter,
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
-        let search_entry = self.search_innter(base, scope, filter, attributes).await?;
+        let search_entry = self.search_inner(base, scope, filter, attributes).await?;
         to_multi_value(search_entry)
     }
 

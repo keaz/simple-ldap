@@ -41,16 +41,18 @@
 use futures::{StreamExt, TryStreamExt};
 use rand::Rng;
 use serde::Deserialize;
-use simple_ldap::{
-    filter::{ContainsFilter, EqFilter},
-    ldap3::{Mod, Scope},
-    Error, LdapClient, LdapConfig, SimpleDN,
-};
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
 use url::Url;
 use uuid::Uuid;
+use anyhow::anyhow;
+
+use simple_ldap::{
+    filter::{ContainsFilter, EqFilter},
+    ldap3::{Mod, Scope},
+    Error, LdapClient, LdapConfig, SimpleDN,
+};
 
 pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
@@ -66,7 +68,7 @@ pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
         ("sn", HashSet::from(["Ranasingh"])),
     ];
 
-    let _result = client
+    client
         .create(uid.as_str(), "ou=people,dc=example,dc=com", data)
         .await?;
 
@@ -85,12 +87,12 @@ pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    let user = client
-        .search::<User>(
+    let user: Result<User, Error> = client
+        .search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &vec!["cn", "sn", "uid"],
+            vec!["cn", "sn", "uid"],
         )
         .await;
 
@@ -109,8 +111,8 @@ pub async fn test_search_no_record<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "SamX".to_string());
-    let user = client
-        .search::<User>(
+    let user: Result<User, Error> = client
+        .search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
@@ -120,19 +122,17 @@ pub async fn test_search_no_record<Client: DerefMut<Target = LdapClient>>(
     assert!(user.is_err());
     let er = user.err().unwrap();
     match er {
-        Error::NotFound(_) => assert!(true),
-        _ => panic!("Unexpected error"),
+        Error::NotFound(_) => Ok(()),
+        _ => Err(anyhow!("Unexpected error")),
     }
-
-    Ok(())
 }
 
 pub async fn test_search_multiple_record<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
-    let user = client
-        .search::<User>(
+    let user: Result<User, Error> = client
+        .search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
@@ -142,11 +142,9 @@ pub async fn test_search_multiple_record<Client: DerefMut<Target = LdapClient>>(
     assert!(user.is_err());
     let er = user.err().unwrap();
     match er {
-        Error::MultipleResults(_) => assert!(true),
-        _ => panic!("Unexpected error"),
+        Error::MultipleResults(_) => Ok(()),
+        _ => Err(anyhow!("Unexpected error")),
     }
-
-    Ok(())
 }
 
 pub async fn test_update_record<Client: DerefMut<Target = LdapClient>>(
@@ -156,7 +154,7 @@ pub async fn test_update_record<Client: DerefMut<Target = LdapClient>>(
         Mod::Replace("cn", HashSet::from(["Jhon_Update"])),
         Mod::Replace("sn", HashSet::from(["Eliet_Update"])),
     ];
-    let _result = client
+    client
         .update(
             "e219fbc0-6df5-4bc3-a6ee-986843bb157e",
             "ou=people,dc=example,dc=com",
@@ -186,11 +184,9 @@ pub async fn test_update_no_record<Client: DerefMut<Target = LdapClient>>(
     assert!(result.is_err());
     let er = result.err().unwrap();
     match er {
-        Error::NotFound(_) => assert!(true),
-        _ => assert!(false),
+        Error::NotFound(_) => Ok(()),
+        _ => Err(anyhow!("Unexpected error")),
     }
-
-    Ok(())
 }
 
 pub async fn test_update_uid_record<Client: DerefMut<Target = LdapClient>>(
@@ -235,8 +231,8 @@ pub async fn test_update_uid_record<Client: DerefMut<Target = LdapClient>>(
         .await?;
 
     let name_filter = EqFilter::from("uid".to_string(), new_uid);
-    let user = client
-        .search::<User>(
+    let user: User = client
+        .search(
             base.as_str(),
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
