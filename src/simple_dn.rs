@@ -7,8 +7,10 @@
 //!
 
 use chumsky::{
-    error::Rich, extra, prelude::{any, just, none_of, one_of},
-    IterParser, Parser
+    IterParser, Parser,
+    error::Rich,
+    extra,
+    prelude::{any, just, none_of, one_of},
 };
 use itertools::{EitherOrBoth, Itertools};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -99,7 +101,8 @@ impl PartialOrd for SimpleDN {
 /// Find the "maximal" common ancestor of two DNs, if any.
 /// Maximal here means that the returned DN is as long as possible.
 pub fn common_ancestor(left: &SimpleDN, right: &SimpleDN) -> Option<SimpleDN> {
-    let mut common_rdns = left.rdns
+    let mut common_rdns = left
+        .rdns
         .iter()
         .rev()
         .zip(right.rdns.iter().rev())
@@ -115,8 +118,7 @@ pub fn common_ancestor(left: &SimpleDN, right: &SimpleDN) -> Option<SimpleDN> {
     if common_rdns.is_empty() {
         // No common ancestry at all.
         None
-    }
-    else {
+    } else {
         Some(SimpleDN { rdns: common_rdns })
     }
 }
@@ -234,7 +236,8 @@ fn simple_rdn_parser<'src>() -> impl Parser<'src, &'src str, SimpleRDN, extra::E
     // That could be a feature worth investigating, but we would need to implement
     // value escaping then too.
     // For now this at least rejects unsound escapes.
-    let escaped = just('\\').then(one_of(special))
+    let escaped = just('\\')
+        .then(one_of(special))
         // This is needed to consolidate the different lengths of "tokens" here.
         // This parser would output tuples of charts, where as we normally output single chars.
         .to_slice();
@@ -337,19 +340,31 @@ mod tests {
 
     #[test]
     fn parse_complex_dn() {
-        "CN=one+OTHER=two,OU=some,DC=thing".parse::<SimpleDN>()
+        "CN=one+OTHER=two,OU=some,DC=thing"
+            .parse::<SimpleDN>()
             .expect_err("Multivalued DN should be rejected.");
     }
 
     #[test]
-    fn parse_dn_escapes() -> anyhow::Result<()>{
+    fn parse_dn_escapes() -> anyhow::Result<()> {
         let parsed = SimpleDN::from_str(r"CN=tea \+ milk \= milktea,OU=mixes,DC=odd\,domain")?;
 
-        let expected = SimpleDN { rdns: vec![
-            SimpleRDN {key: String::from("CN"), value: String::from("tea \\+ milk \\= milktea")},
-            SimpleRDN {key: String::from("OU"), value: String::from("mixes")},
-            SimpleRDN {key: String::from("DC"), value: String::from("odd\\,domain")},
-        ]};
+        let expected = SimpleDN {
+            rdns: vec![
+                SimpleRDN {
+                    key: String::from("CN"),
+                    value: String::from("tea \\+ milk \\= milktea"),
+                },
+                SimpleRDN {
+                    key: String::from("OU"),
+                    value: String::from("mixes"),
+                },
+                SimpleRDN {
+                    key: String::from("DC"),
+                    value: String::from("odd\\,domain"),
+                },
+            ],
+        };
 
         assert_eq!(parsed, expected);
 

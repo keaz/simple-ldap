@@ -63,11 +63,11 @@ async fn main(){
     let mut client = LdapClient::new(ldap_config).await.unwrap();
     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
     let user: User = client
-        .search::<User>(
+        .search(
         "ou=people,dc=example,dc=com",
         Scope::OneLevel,
         &name_filter,
-        &vec!["dn", "cn", "sn", "uid","addresses"],
+        vec!["dn", "cn", "sn", "uid","addresses"],
     ).await.unwrap();
 }
 ```

@@ -59,11 +59,11 @@
 //!     let mut client = LdapClient::new(ldap_config).await.unwrap();
 //!     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
 //!     let user: User = client
-//!         .search::<User>(
+//!         .search(
 //!         "ou=people,dc=example,dc=com",
 //!         Scope::OneLevel,
 //!         &name_filter,
-//!         &vec!["dn", "cn", "sn", "uid"],
+//!         vec!["dn", "cn", "sn", "uid"],
 //!     ).await.unwrap();
 //! }
 //! ```
@@ -133,20 +133,20 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    iter,
+    fmt, iter,
 };
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
-use futures::{executor::block_on, stream, Stream, StreamExt};
+use futures::{Stream, StreamExt, executor::block_on, stream};
 use ldap3::{
-    adapters::{Adapter, EntriesOnly, PagedResults},
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
     SearchStream, StreamState,
+    adapters::{Adapter, EntriesOnly, PagedResults},
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, warn, Level};
+use tracing::{Level, debug, error, info, instrument, warn};
 use url::Url;
 
 pub mod filter;
@@ -345,9 +345,7 @@ impl LdapClient {
         self.ldap
             .simple_bind(entry_dn, password)
             .await
-            .map_err(|_| {
-                Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
-            })
+            .map_err(|_| Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}")))
             .and_then(|r| {
                 r.success().map_err(|_| {
                     Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
@@ -356,13 +354,18 @@ impl LdapClient {
             .and(Ok(()))
     }
 
-    async fn search_innter(
+    async fn search_inner<'a, F, A, S>(
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &(impl Filter + ?Sized),
-        attributes: &Vec<&str>,
-    ) -> Result<SearchEntry, Error> {
+        filter: &F,
+        attributes: A,
+    ) -> Result<SearchEntry, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+    {
         let search = self
             .ldap
             .search(base, scope, filter.filter().as_str(), attributes)
@@ -452,24 +455,31 @@ impl LdapClient {
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
-    ///     let user_result = client
-    ///         .search::<User>(
+    ///     let user_result: User = client
+    ///         .search(
     ///         "ou=people,dc=example,dc=com",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &vec!["cn", "sn", "uid"],
-    ///     ).await;
+    ///         vec!["cn", "sn", "uid"],
+    ///     ).await
+    ///     .unwrap();
     /// }
     /// ```
     ///
-    pub async fn search<T: for<'a> serde::Deserialize<'a>>(
+    pub async fn search<'a, F, A, S, T>(
         &mut self,
         base: &str,
         scope: Scope,
-        filter: &impl Filter,
-        attributes: &Vec<&str>,
-    ) -> Result<T, Error> {
-        let search_entry = self.search_innter(base, scope, filter, attributes).await?;
+        filter: &F,
+        attributes: A,
+    ) -> Result<T, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+        T: for<'de> serde::Deserialize<'de>,
+    {
+        let search_entry = self.search_inner(base, scope, filter, attributes).await?;
         to_value(search_entry)
     }
 
@@ -538,7 +548,7 @@ impl LdapClient {
         filter: &impl Filter,
         attributes: &Vec<&str>,
     ) -> Result<T, Error> {
-        let search_entry = self.search_innter(base, scope, filter, attributes).await?;
+        let search_entry = self.search_inner(base, scope, filter, attributes).await?;
         to_multi_value(search_entry)
     }
 
@@ -611,7 +621,7 @@ impl LdapClient {
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &attributes
+    ///         attributes
     ///     ).await.unwrap();
     ///
     ///     // The returned stream is not Unpin, so you may need to pin it to use certain operations,
@@ -632,7 +642,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search<'a, F: Filter>(
+    pub async fn streaming_search<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -640,13 +650,18 @@ impl LdapClient {
         //
         // The lifetime is needed to guarantee that the client is not returned to the pool before
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
-        // just makes copy. So this lifetime is here just to enforce correct pool usage.
+        // just makes a copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: &'a str,
+        base: &str,
         scope: Scope,
-        filter: &'a F,
-        attributes: &'a Vec<&'a str>,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
+        filter: &F,
+        attributes: A,
+    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    where
+        F: Filter,
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+    {
         let search_stream = self
             .ldap
             .streaming_search(base, scope, filter.filter().as_str(), attributes)
@@ -732,7 +747,7 @@ impl LdapClient {
     ///         "",
     ///         Scope::OneLevel,
     ///         &name_filter,
-    ///         &attributes,
+    ///         attributes,
     ///         200 // The pagesize
     ///     ).await.unwrap();
     ///
@@ -748,7 +763,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search_paged<'a, F: Filter>(
+    pub async fn streaming_search_paged<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -758,13 +773,19 @@ impl LdapClient {
         // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
         // just makes copy. So this lifetime is here just to enforce correct pool usage.
         &'a mut self,
-        base: &'a str,
+        base: &str,
         scope: Scope,
-        filter: &'a F,
-        attributes: &'a Vec<&'a str>,
+        filter: &F,
+        attributes: A,
         page_size: i32,
-    ) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, F>, Error> {
-        let adapters: Vec<Box<dyn Adapter<_, _>>> = vec![
+    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    where
+        F: Filter,
+        // PagedResults requires Clone and Debug too.
+        A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
+        S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a,
+    {
+        let adapters: Vec<Box<dyn Adapter<'a, S, A>>> = vec![
             Box::new(EntriesOnly::new()),
             Box::new(PagedResults::new(page_size)),
         ];
@@ -836,18 +857,12 @@ impl LdapClient {
         let dn = format!("uid={uid},{base}");
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let save = save.unwrap().success();
 
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let res = save.unwrap();
         debug!("Sucessfully created record result: {:?}", res);
@@ -1095,18 +1110,12 @@ impl LdapClient {
         ];
         let save = self.ldap.add(dn.as_str(), data).await;
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error saving record: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error saving record: {err:?}"), err));
         }
         let save = save.unwrap().success();
 
         if let Err(err) = save {
-            return Err(Error::Create(
-                format!("Error creating group: {err:?}"),
-                err,
-            ));
+            return Err(Error::Create(format!("Error creating group: {err:?}"), err));
         }
         let res = save.unwrap();
         debug!("Sucessfully created group result: {:?}", res);
@@ -1232,22 +1241,28 @@ impl LdapClient {
     ///
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = client.get_members::<User>(
+    ///     let members: Vec<User> = client.get_members(
     ///         "cn=test_group,ou=groups,dc=example,dc=com",
     ///         "ou=people,dc=example,dc=com",
     ///         Scope::OneLevel,
-    ///         &vec!["cn", "sn", "uid"]
-    ///     ).await;
+    ///         vec!["cn", "sn", "uid"]
+    ///     ).await
+    ///     .unwrap();
     /// }
     /// ```
     ///
-    pub async fn get_members<T: for<'a> serde::Deserialize<'a>>(
+    pub async fn get_members<'a, A, S, T>(
         &mut self,
         group_dn: &str,
         base_dn: &str,
         scope: Scope,
-        attributes: &Vec<&str>,
-    ) -> Result<Vec<T>, Error> {
+        attributes: A,
+    ) -> Result<Vec<T>, Error>
+    where
+        A: AsRef<[S]> + Send + Sync + 'a,
+        S: AsRef<str> + Send + Sync + 'a,
+        T: for<'de> serde::Deserialize<'de>,
+    {
         let search = self
             .ldap
             .search(
@@ -1577,11 +1592,8 @@ fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Res
 
     let value = serde_value::Value::Map(all_fields);
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 #[instrument(level = Level::DEBUG)]
@@ -1632,11 +1644,8 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
 
     let value = serde_value::Value::Map(all_fields);
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 fn map_to_multi_value(attra_value: Vec<String>) -> serde_value::Value {
@@ -1667,16 +1676,11 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
 #[instrument(level = Level::DEBUG)]
 fn to_multi_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
     let value = serde_value::to_value(SerializeWrapper(search_entry)).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
+        Error::Mapping(format!("Error converting search result to object, {err:?}"))
     })?;
 
-    T::deserialize(value).map_err(|err| {
-        Error::Mapping(format!(
-            "Error converting search result to object, {err:?}"
-        ))
-    })
+    T::deserialize(value)
+        .map_err(|err| Error::Mapping(format!("Error converting search result to object, {err:?}")))
 }
 
 fn map_to_single_value(attra_value: Option<&String>) -> serde_value::Value {
@@ -1749,9 +1753,10 @@ where
             Ok(_) => (), // All good.
             // This is returned if the stream is cancelled in the middle.
             // Which is fine for us.
-            Err(LdapError::LdapResult {result: LdapResult{rc: return_code, ..}})
-                // https://ldap.com/ldap-result-code-reference-client-side-result-codes/#rc-userCanceled
-                if return_code == 88 => (),
+            // https://ldap.com/ldap-result-code-reference-client-side-result-codes/#rc-userCanceled
+            Err(LdapError::LdapResult {
+                result: LdapResult { rc: 88, .. },
+            }) => (),
             Err(finish_err) => error!("The stream finished with an error: {finish_err}"),
         }
 
@@ -1760,8 +1765,9 @@ where
             // This should be the common case.
             StreamState::Done | StreamState::Closed => (),
             StreamState::Error => {
-                error!("Stream is in Error state. Not trying to cancel it as it could do more harm than good.");
-                ()
+                error!(
+                    "Stream is in Error state. Not trying to cancel it as it could do more harm than good."
+                );
             }
             StreamState::Fresh | StreamState::Active => {
                 info!("Stream is still open. Issuing cancellation to the server.");
@@ -1783,7 +1789,7 @@ where
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
 fn to_native_stream<'a, S, A>(
     ldap3_stream: SearchStream<'a, S, A>,
-) -> Result<impl Stream<Item = Result<Record, crate::Error>> + use<'a, S, A>, Error>
+) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
@@ -1899,8 +1905,8 @@ mod tests {
     use super::*;
     use anyhow::anyhow;
     use serde::Deserialize;
-    use serde_with::serde_as;
     use serde_with::OneOrMany;
+    use serde_with::serde_as;
     use uuid::Uuid;
 
     #[test]
