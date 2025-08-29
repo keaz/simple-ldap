@@ -46,7 +46,23 @@ jobs:
         run: cargo build --verbose
 
       # Step 5: Run unit tests
-      - name: Run tests
-        run: cargo test --verbose
+      # - name: Run tests
+      #   run: cargo test --verbose
+      - name: Install llvm-tools and cargo-llvm-cov
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov
+
+      - name: Run coverage
+        run: |
+          cargo llvm-cov --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: unittests
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
 
