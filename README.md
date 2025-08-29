@@ -3,6 +3,7 @@
 A ldap client library that wraps [ldap3](https://github.com/inejge/ldap3) to make it easy to use.
 
 ![CI](https://github.com/keaz/simple-ldap/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/keaz/simple-ldap/branch/main/graph/badge.svg?token=WE8Z9IBZTS)](https://codecov.io/gh/keaz/simple-ldap)
 [![Crates.io](https://img.shields.io/crates/v/simple-ldap)](https://crates.io/crates/simple-ldap)
 [![Documentation](https://docs.rs/simple-ldap/badge.svg)](https://docs.rs/simple-ldap)
 
