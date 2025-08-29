@@ -2,3 +2,8 @@
 /Cargo.lock
 .DS_Store
 /semver-checks
+
+codecov
+codecov.SHA256SUM
+codecov.SHA256SUM.sig
+lcov.info
