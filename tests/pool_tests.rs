@@ -63,6 +63,11 @@ async fn test_search_multiple_record() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_search_multi_valued() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_search_multi_valued).await
+}
+
+#[tokio::test]
 async fn test_update_record() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_update_record).await
 }
@@ -130,4 +135,14 @@ async fn test_remove_users_from_group() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_associated_groups() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_associated_groups).await
+}
+
+#[tokio::test]
+async fn test_authenticate_success() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_authenticate_success).await
+}
+
+#[tokio::test]
+async fn test_authenticate_wrong_password() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_authenticate_wrong_password).await
 }

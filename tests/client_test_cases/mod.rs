@@ -83,6 +83,14 @@ pub struct User {
     pub sn: String,
 }
 
+#[derive(Deserialize)]
+pub struct MultiValueUser {
+    pub dn: SimpleDN,
+    #[serde(rename = "objectClass")]
+    pub object_class: Vec<String>,
+    pub uid: Vec<String>,
+}
+
 pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
@@ -104,6 +112,36 @@ pub async fn test_search_record<Client: DerefMut<Target = LdapClient>>(
     assert_eq!(user.cn, "Sam");
     assert_eq!(user.sn, "Smith");
     assert_eq!(user.dn, dn);
+
+    Ok(())
+}
+
+pub async fn test_search_multi_valued<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    let filter = EqFilter::from(
+        "uid".to_string(),
+        "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5".to_string(),
+    );
+    let attributes = vec!["objectClass", "uid"];
+    let user: MultiValueUser = client
+        .search_multi_valued(
+            "ou=people,dc=example,dc=com",
+            simple_ldap::ldap3::Scope::OneLevel,
+            &filter,
+            &attributes,
+        )
+        .await?;
+
+    assert_eq!(
+        user.uid,
+        vec![String::from("f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5")]
+    );
+    assert!(user.object_class.contains(&String::from("inetorgperson")));
+    assert!(
+        user.object_class
+            .contains(&String::from("organizationalPerson"))
+    );
 
     Ok(())
 }
@@ -555,6 +593,72 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(
     assert_eq!(result.len(), 2);
 
     Ok(())
+}
+
+pub async fn test_authenticate_success<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    let uid = random_uid();
+    let password = format!("secret-{uid}");
+    let base = "ou=people,dc=example,dc=com";
+
+    let data = vec![
+        (
+            "objectClass",
+            HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
+        ),
+        ("uid", HashSet::from([uid.as_str()])),
+        ("cn", HashSet::from(["Auth"])),
+        ("sn", HashSet::from(["Tester"])),
+        ("userPassword", HashSet::from([password.as_str()])),
+    ];
+
+    client.create(uid.as_str(), base, data).await?;
+
+    let filter = EqFilter::from("uid".to_string(), uid.clone());
+    let auth_result = client
+        .authenticate(base, uid.as_str(), password.as_str(), Box::new(filter))
+        .await;
+
+    client.delete(uid.as_str(), base).await?;
+
+    auth_result?;
+
+    Ok(())
+}
+
+pub async fn test_authenticate_wrong_password<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    let uid = random_uid();
+    let password = format!("secret-{uid}");
+    let base = "ou=people,dc=example,dc=com";
+
+    let data = vec![
+        (
+            "objectClass",
+            HashSet::from(["organizationalPerson", "inetorgperson", "top", "person"]),
+        ),
+        ("uid", HashSet::from([uid.as_str()])),
+        ("cn", HashSet::from(["Auth"])),
+        ("sn", HashSet::from(["Tester"])),
+        ("userPassword", HashSet::from([password.as_str()])),
+    ];
+
+    client.create(uid.as_str(), base, data).await?;
+
+    let filter = EqFilter::from("uid".to_string(), uid.clone());
+    let auth_result = client
+        .authenticate(base, uid.as_str(), "definitely-wrong", Box::new(filter))
+        .await;
+
+    client.delete(uid.as_str(), base).await?;
+
+    match auth_result {
+        Err(Error::AuthenticationFailed(_)) => Ok(()),
+        Err(other) => Err(anyhow!("Unexpected error: {other:?}")),
+        Ok(_) => Err(anyhow!("Authentication succeeded unexpectedly")),
+    }
 }
 
 /***************
