@@ -42,6 +42,12 @@ async fn test_search_multiple_record() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_search_multi_valued() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::test_search_multi_valued(Box::new(client)).await
+}
+
+#[tokio::test]
 async fn test_update_record() -> anyhow::Result<()> {
     let client = get_test_client().await?;
     client_test_cases::test_update_record(Box::new(client)).await
@@ -123,4 +129,16 @@ async fn test_remove_users_from_group() -> anyhow::Result<()> {
 async fn test_associated_groups() -> anyhow::Result<()> {
     let client = get_test_client().await?;
     client_test_cases::test_associated_groups(Box::new(client)).await
+}
+
+#[tokio::test]
+async fn test_authenticate_success() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::test_authenticate_success(Box::new(client)).await
+}
+
+#[tokio::test]
+async fn test_authenticate_wrong_password() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::test_authenticate_wrong_password(Box::new(client)).await
 }
