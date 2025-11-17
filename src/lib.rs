@@ -138,6 +138,7 @@ use std::{
 
 use filter::{AndFilter, EqFilter, Filter, OrFilter};
 use futures::{Stream, StreamExt, executor::block_on, stream};
+use std::pin::Pin;
 use ldap3::{
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
     SearchStream, StreamState,
@@ -656,7 +657,7 @@ impl LdapClient {
         scope: Scope,
         filter: &F,
         attributes: A,
-    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Record, Error>> + 'a>>, Error>
     where
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
@@ -778,7 +779,7 @@ impl LdapClient {
         filter: &F,
         attributes: A,
         page_size: i32,
-    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Record, Error>> + 'a>>, Error>
     where
         F: Filter,
         // PagedResults requires Clone and Debug too.
@@ -1789,7 +1790,7 @@ where
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
 fn to_native_stream<'a, S, A>(
     ldap3_stream: SearchStream<'a, S, A>,
-) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, S, A>, Error>
+) -> Result<Pin<Box<dyn Stream<Item = Result<Record, Error>> + 'a>>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
@@ -1818,7 +1819,7 @@ where
         }
     });
 
-    Ok(stream)
+    Ok(Box::pin(stream))
 }
 
 /// The Record struct is used to map the search result to a struct.
