@@ -656,7 +656,7 @@ impl LdapClient {
         scope: Scope,
         filter: &F,
         attributes: A,
-    ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
+    ) -> Result<impl Stream<Item = Result<Record, Error>> + 'a + use<'a, F, A, S>, Error>
     where
         F: Filter,
         A: AsRef<[S]> + Send + Sync + 'a,
@@ -1789,7 +1789,7 @@ where
 /// A helper to create native rust streams out of `ldap3::SearchStream`s.
 fn to_native_stream<'a, S, A>(
     ldap3_stream: SearchStream<'a, S, A>,
-) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, S, A>, Error>
+) -> Result<impl Stream<Item = Result<Record, Error>> + 'a + use<'a, S, A>, Error>
 where
     S: AsRef<str> + Send + Sync + 'a,
     A: AsRef<[S]> + Send + Sync + 'a,
