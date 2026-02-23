@@ -119,9 +119,10 @@
 //!
 //! #### Multi-valued attributes
 //!
-//! Multi-valued attributes should be marked as #[serde_as(as = "OneOrMany<_>")] using `serde_with`. Currently, there is a limitation when handing
-//! binary attributes. This will be fixed in the future. As a workaround, you can use `search_multi_valued` or `Record::to_multi_valued_record_`.
-//! To use those method all the attributes should be multi-valued.
+//! Multi-valued attributes should be marked as #[serde_as(as = "OneOrMany<_>")] using `serde_with` when using the multi-valued mapper.
+//! In the regular mapper, binary multi-valued values are currently represented as `Vec<Vec<u8>>`, and also map to common byte-based
+//! Rust types like `Vec<Uuid>`.
+//! As an alternative for custom per-attribute decoding, you can use `search_multi_valued` or `Record::to_multi_valued_record_`.
 //!
 //!
 //! ## Compile time features
@@ -1167,7 +1168,7 @@ impl LdapClient {
     ) -> Result<(), Error> {
         let mut mods = Vec::new();
         let users = users.iter().copied().collect::<HashSet<&str>>();
-        mods.push(Mod::Replace("member", users));
+        mods.push(Mod::Add("member", users));
         let res = self.ldap.modify(group_dn, mods).await;
         if let Err(err) = res {
             return Err(Error::Update(
@@ -1310,17 +1311,9 @@ impl LdapClient {
         search_entry
             .attrs
             .into_iter()
-            .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.to_owned(), value.to_owned()))
-            .filter(|(attra, _)| attra.eq("member"))
+            .filter(|(attribute, value)| attribute == "member" && !value.is_empty())
             .flat_map(|(_, value)| value)
-            .map(|val| {
-                val.split(',').collect::<Vec<&str>>()[0]
-                    .split('=')
-                    .map(|split| split.to_string())
-                    .collect::<Vec<String>>()
-            })
-            .map(|uid| EqFilter::from(uid[0].to_string(), uid[1].to_string()))
+            .filter_map(member_dn_to_eq_filter)
             .for_each(|eq| or_filter.add(Box::new(eq)));
 
         let result = self
@@ -1616,21 +1609,17 @@ fn to_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, 
         // I wonder if it's possible to have empties here..?
         .filter(|(_, value)| !value.is_empty())
         .map(|(arrta, value)| {
-            if value.len() > 1 {
-                //#TODO: This is a bit of a hack to get multi-valued attributes to work for non binary values. SHOULD fix this.
-                warn!("Treating multivalued attribute {arrta} as singlevalued.")
+            if value.len() == 1 {
+                (
+                    Value::String(arrta),
+                    map_to_single_value_bin(value.first().cloned()),
+                )
+            } else {
+                (
+                    Value::String(arrta),
+                    map_to_multi_value_bin(value),
+                )
             }
-            (
-                Value::String(arrta),
-                map_to_single_value_bin(value.first().cloned()),
-            )
-            // if value.len() == 1 {
-            //     return (
-            //         Value::String(arrta),
-            //         map_to_single_value_bin(value.first().cloned()),
-            //     );
-            // }
-            // (Value::String(arrta), map_to_multi_value_bin(value))
         });
 
     // DN is always returned.
@@ -1671,6 +1660,75 @@ fn map_to_multi_value_bin(attra_values: Vec<Vec<u8>>) -> serde_value::Value {
         .collect::<Vec<Value>>();
 
     serde_value::Value::Seq(value_bytes)
+}
+
+fn split_unescaped_first_char(s: &str, needle: u8) -> Option<usize> {
+    let mut escaped = false;
+    for (index, byte) in s.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        if byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+
+        if byte == needle {
+            return Some(index);
+        }
+    }
+
+    None
+}
+
+fn unescape_ldap_value(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut escaped = false;
+
+    for ch in value.chars() {
+        if escaped {
+            output.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        output.push(ch);
+    }
+
+    if escaped {
+        output.push('\\');
+    }
+
+    output
+}
+
+fn member_dn_to_filter_components(member_dn: &str) -> Option<(String, String)> {
+    let first_rdn = split_unescaped_first_char(member_dn, b',')
+        .map(|index| &member_dn[..index])
+        .unwrap_or(member_dn);
+
+    let separator = split_unescaped_first_char(first_rdn, b'=')?;
+    if separator == 0 {
+        return None;
+    }
+
+    let attr = unescape_ldap_value(&first_rdn[..separator]);
+    let value = unescape_ldap_value(&first_rdn[separator + 1..]);
+
+    Some((attr, value))
+}
+
+fn member_dn_to_eq_filter(member_dn: String) -> Option<EqFilter> {
+    member_dn_to_filter_components(&member_dn).map(|(attribute, value)| {
+        EqFilter::from(attribute, value)
+    })
 }
 
 // Allowing users to debug serialization issues from the logs.
@@ -2018,34 +2076,87 @@ mod tests {
         Ok(())
     }
 
-    // #[test] // This test is not working, because the OneOrMany trait is not implemented for Uuid. Will fix this later.
+    #[test]
     fn binary_multi_to_value_test() -> anyhow::Result<()> {
-        #[serde_as]
         #[derive(Deserialize)]
         struct TestMultivalueBinary {
-            #[serde_as(as = "OneOrMany<_>")]
-            pub uuids: Vec<Uuid>,
+            pub uuids: Vec<Vec<u8>>,
             pub key1: String,
         }
 
-        let (bytes, correct_string_representation) = get_binary_uuid();
+        let (bytes1, _correct_string_representation) = get_binary_uuid();
+        let bytes2 = vec![0xde, 0xad, 0xbe, 0xef];
 
         let entry = SearchEntry {
             dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
             attrs: HashMap::from([(String::from("key1"), vec![String::from("value1")])]),
-            bin_attrs: HashMap::from([(String::from("uuids"), vec![bytes])]),
+            bin_attrs: HashMap::from([(
+                String::from("uuids"),
+                vec![bytes1, bytes2],
+            )]),
         };
 
         let test = to_value::<TestMultivalueBinary>(entry).unwrap();
 
-        match test.uuids.as_slice() {
-            [one] => {
-                let string_uuid = one.hyphenated().to_string();
-                assert_eq!(string_uuid, correct_string_representation);
-                Ok(())
-            }
-            [..] => Err(anyhow!("There was supposed to be exactly one uuid.")),
+        assert_eq!(test.uuids.len(), 2);
+        assert_eq!(test.uuids[0], vec![
+            0xa1, 0xa2, 0xa3, 0xa4, 0xb1, 0xb2, 0xc1, 0xc2, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5,
+            0xd6, 0xd7, 0xd8,
+        ]);
+        assert_eq!(test.uuids[1], vec![0xde, 0xad, 0xbe, 0xef]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn binary_multi_to_uuid_value_test() -> anyhow::Result<()> {
+        #[derive(Deserialize)]
+        struct TestMultivalueBinary {
+            pub uuids: Vec<Uuid>,
+            pub key1: String,
         }
+
+        let (bytes1, uuid1_string) = get_binary_uuid();
+        let uuid1 = Uuid::parse_str(&uuid1_string).unwrap();
+        let uuid2 = Uuid::from_u128(0x00112233445566778899aabbccddeeff10);
+
+        let entry = SearchEntry {
+            dn: String::from("CN=Thing,OU=Unit,DC=example,DC=org"),
+            attrs: HashMap::from([(String::from("key1"), vec![String::from("value1")])]),
+            bin_attrs: HashMap::from([(
+                String::from("uuids"),
+                vec![bytes1, uuid2.as_bytes().to_vec()],
+            )]),
+        };
+
+        let test = to_value::<TestMultivalueBinary>(entry).unwrap();
+
+        assert_eq!(test.uuids, vec![uuid1, uuid2]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn member_dn_to_filter_components_escaped_rdn_value() {
+        let member_dn = "uid=user\\,one\\+two\\=three,ou=people,dc=example,dc=com";
+
+        let (attribute, value) = member_dn_to_filter_components(member_dn).expect("Expected valid DN");
+
+        assert_eq!(attribute, "uid");
+        assert_eq!(value, "user,one+two=three");
+    }
+
+    #[test]
+    fn member_dn_to_filter_components_invalid_input_is_ignored() {
+        assert_eq!(member_dn_to_filter_components("just-a-string"), None);
+
+        let filters = vec![
+            member_dn_to_eq_filter("just-a-string".to_string()),
+            member_dn_to_eq_filter("uid=a,dc=example".to_string()),
+        ];
+
+        assert!(filters[0].is_none());
+        assert!(filters[1].is_some());
     }
 
     #[derive(Debug, Deserialize)]

@@ -81,3 +81,19 @@ objectClass: top
 objectClass: groupOfNames
 cn: grp2
 member: uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com
+
+dn: uid=user\,one\+two\=three,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+sn: Escape
+cn: Escaped Member
+ou: people
+uid: user,one+two=three
+
+dn: cn=grp_escaped,ou=group,dc=example,dc=com
+objectClass: top
+objectClass: groupOfNames
+cn: grp_escaped
+member: uid=user\,one\+two\=three,ou=people,dc=example,dc=com

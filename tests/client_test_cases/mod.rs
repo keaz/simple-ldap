@@ -434,13 +434,55 @@ pub async fn test_add_users_to_group<Client: DerefMut<Target = LdapClient>>(
         .add_users_to_group(
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+                "uid=cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b,ou=people,dc=example,dc=com",
             ],
             group_dn.as_str(),
         )
         .await?;
 
     // Could check here that they are actually in the group.
+
+    Ok(())
+}
+
+pub async fn test_add_users_to_group_preserves_existing_members<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    let group_name = append_random_id("user_add_preserve_group");
+    let group_dn = format!("cn={group_name},ou=group,dc=example,dc=com");
+
+    client
+        .create_group(group_name.as_str(), "ou=group,dc=example,dc=com", "Some Decription")
+        .await?;
+
+    let first_user = "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com";
+    let second_user = "uid=cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b,ou=people,dc=example,dc=com";
+
+    client
+        .add_users_to_group(vec![first_user], group_dn.as_str())
+        .await?;
+    client
+        .add_users_to_group(vec![second_user], group_dn.as_str())
+        .await?;
+
+    let users: Vec<User> = client
+        .get_members(
+            group_dn.as_str(),
+            "dc=example,dc=com",
+            Scope::Subtree,
+            &vec!["cn", "sn", "uid"],
+        )
+        .await?;
+
+    let user_count = users
+        .iter()
+        .filter(|user| {
+            user.uid == "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5"
+                || user.uid == "cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b"
+        })
+        .count();
+
+    assert_eq!(user_count, 2);
 
     Ok(())
 }
@@ -462,7 +504,7 @@ pub async fn test_get_members<Client: DerefMut<Target = LdapClient>>(
         .add_users_to_group(
             vec![
                 "uid=f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5,ou=people,dc=example,dc=com",
-                "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+                "uid=cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b,ou=people,dc=example,dc=com",
             ],
             group_dn.as_str(),
         )
@@ -483,10 +525,28 @@ pub async fn test_get_members<Client: DerefMut<Target = LdapClient>>(
         .iter()
         .filter(|user| {
             user.uid == "f92f4cb2-e821-44a4-bb13-b8ebadf4ecc5"
-                || user.uid == "e219fbc0-6df5-4bc3-a6ee-986843bb157e"
+                || user.uid == "cb4bc91e-21d8-4bcc-bf6a-317b84c2e58b"
         })
         .count();
     assert_eq!(user_count, 2);
+
+    Ok(())
+}
+
+pub async fn test_get_members_escaped_dn<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    let users: Vec<User> = client
+        .get_members(
+            "cn=grp_escaped,ou=group,dc=example,dc=com",
+            "dc=example,dc=com",
+            Scope::Subtree,
+            &vec!["cn", "sn", "uid"],
+        )
+        .await?;
+
+    assert_eq!(users.len(), 1);
+    assert_eq!(users[0].uid, "user,one+two=three");
 
     Ok(())
 }

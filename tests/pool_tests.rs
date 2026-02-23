@@ -118,8 +118,18 @@ async fn test_add_users_to_group() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_add_users_to_group_preserves_existing_members() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_add_users_to_group_preserves_existing_members).await
+}
+
+#[tokio::test]
 async fn test_get_members() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_get_members).await
+}
+
+#[tokio::test]
+async fn test_get_members_escaped_dn() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::test_get_members_escaped_dn).await
 }
 
 #[tokio::test]
