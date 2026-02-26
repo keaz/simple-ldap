@@ -131,12 +131,6 @@
 //! * `pool` - Enable connection pooling
 //!
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt, iter,
-};
-
-use filter::{AndFilter, EqFilter, Filter, OrFilter};
 use futures::{Stream, StreamExt, executor::block_on, stream};
 use ldap3::{
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
@@ -145,16 +139,26 @@ use ldap3::{
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt, iter,
+};
 use thiserror::Error;
 use tracing::{Level, debug, error, info, instrument, warn};
 use url::Url;
+
+use filter::{AndFilter, EqFilter, Filter, OrFilter};
+use sort::adapter::ServerSideSort;
 
 pub mod filter;
 #[cfg(feature = "pool")]
 pub mod pool;
 pub mod simple_dn;
+mod sort;
 // Export the main type of the module right here in the root.
 pub use simple_dn::SimpleDN;
+// Used as an argument in the public API.
+pub use sort::adapter::SortBy;
 
 // Would likely be better if we could avoid re-exporting this.
 // I suspect it's only used in some configs?
@@ -180,7 +184,7 @@ pub struct LdapConfig {
 }
 
 ///
-/// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
+/// High-level LDAP client wrapper on top of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
 #[derive(Debug, Clone)]
@@ -689,8 +693,9 @@ impl LdapClient {
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
-    /// * `page_size` - The maximum number of records in a page
     /// * `attributes` - The attributes to return from the search
+    /// * `page_size` - The maximum number of records in a page
+    /// * `sort_by` - Sort the results using LDAP Server Side Sort.
     ///
     ///
     /// # Returns
@@ -778,6 +783,7 @@ impl LdapClient {
         filter: &F,
         attributes: A,
         page_size: i32,
+        sort_by: Vec<SortBy>,
     ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
     where
         F: Filter,
@@ -785,10 +791,22 @@ impl LdapClient {
         A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
         S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a,
     {
-        let adapters: Vec<Box<dyn Adapter<'a, S, A>>> = vec![
-            Box::new(EntriesOnly::new()),
-            Box::new(PagedResults::new(page_size)),
+        // Empty vec just means that we won't use the search adapter.
+        let sort_adapter: Option<Box<dyn Adapter<'a, S, A>>> = vec_to_option(sort_by)
+            .map(ServerSideSort::new)
+            .transpose()
+            .map_err(|duplicate_args_err| Error::Sort(duplicate_args_err.to_string()))?
+            .map(|adapter| Box::new(adapter) as _);
+
+        let maybe_adapters: Vec<Option<Box<dyn Adapter<'a, S, A>>>> = vec![
+            Some(Box::new(EntriesOnly::new())),
+            // Sort needs to be before paging, so that it's control will be included in all the page requests.
+            sort_adapter,
+            Some(Box::new(PagedResults::new(page_size))),
         ];
+
+        let adapters: Vec<_> = maybe_adapters.into_iter().flatten().collect();
+
         let search_stream = self
             .ldap
             .streaming_search_with(adapters, base, scope, filter.filter().as_str(), attributes)
@@ -1528,6 +1546,11 @@ impl LdapClient {
     }
 }
 
+/// Empty vec becomes None, otherwise it gets wrapped in Some.
+fn vec_to_option<T>(vec: Vec<T>) -> Option<Vec<T>> {
+    if vec.is_empty() { None } else { Some(vec) }
+}
+
 /// A proxy type for deriving `Serialize` for `ldap3::SearchEntry`.
 /// https://serde.rs/remote-derive.html
 #[derive(Serialize)]
@@ -1862,7 +1885,7 @@ pub enum StreamResult<T> {
 ///
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Error occured when performing a LDAP query
+    /// Error occurred when performing a LDAP query
     #[error("{0}")]
     Query(String, #[source] LdapError),
     /// No records found for the search criteria
@@ -1874,16 +1897,16 @@ pub enum Error {
     /// Authenticating a user failed.
     #[error("{0}")]
     AuthenticationFailed(String),
-    /// Error occured when creating a record
+    /// Error occurred when creating a record
     #[error("{0}")]
     Create(String, #[source] LdapError),
-    /// Error occured when updating a record
+    /// Error occurred when updating a record
     #[error("{0}")]
     Update(String, #[source] LdapError),
-    /// Error occured when deleting a record
+    /// Error occurred when deleting a record
     #[error("{0}")]
     Delete(String, #[source] LdapError),
-    /// Error occured when mapping the search result to a struct
+    /// Error occurred when mapping the search result to a struct
     #[error("{0}")]
     Mapping(String),
     /// Error occurred while attempting to create an LDAP connection
@@ -1896,6 +1919,10 @@ pub enum Error {
     /// Error occurred while abandoning the search result
     #[error("{0}")]
     Abandon(String, #[source] LdapError),
+
+    /// Something wrong with Server Side Sort
+    #[error("{0}")]
+    Sort(String),
 }
 
 #[cfg(test)]

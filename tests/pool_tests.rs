@@ -93,6 +93,16 @@ async fn test_streaming_search_paged() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn sorted_paged_search() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::sorted_paged_search).await
+}
+
+#[tokio::test]
+async fn sorted_paged_search_reverse() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::sorted_paged_search_reverse).await
+}
+
+#[tokio::test]
 async fn test_search_stream_drop() -> anyhow::Result<()> {
     dispatch_parallel_test(client_test_cases::test_search_stream_drop).await
 }
