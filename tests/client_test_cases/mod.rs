@@ -43,7 +43,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use rand::Rng;
 use serde::Deserialize;
-use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
+use std::{collections::HashSet, num::{NonZero, NonZeroU16}, ops::DerefMut, str::FromStr, sync::Once};
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use url::Url;
@@ -287,7 +287,7 @@ pub async fn test_update_uid_record<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
+pub async fn streaming_search<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
@@ -298,6 +298,8 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attra,
+            None,
+            Vec::new()
         )
         .await?;
 
@@ -321,22 +323,26 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
+// Can be used as an example value where one is needed.
+// Shouldn't be too big so that the searches actually get more than one page.
+const PAGE_SIZE: NonZeroU16 = NonZero::new(2).unwrap();
+
+pub async fn streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     // enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages.
-            2,
+            Some(PAGE_SIZE),
             Vec::new(),
         )
         .await?;
@@ -365,14 +371,14 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
     }];
 
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages.
-            3,
+            Some(PAGE_SIZE),
             cn_sort,
         )
         .await?;
@@ -399,14 +405,14 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
     }];
 
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages.
-            3,
+            Some(PAGE_SIZE),
             sn_sort,
         )
         .await?;
@@ -435,7 +441,7 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
 
     // Getting all the users.
     let name_filter = EqFilter::from("objectClass".to_string(), "person".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let sort = vec![SortBy {
         attribute: "cn".to_owned(),
         // This is the key bit in this test.
@@ -443,14 +449,14 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
     }];
 
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages.
-            2,
+            Some(PAGE_SIZE),
             sort,
         )
         .await?;
@@ -481,16 +487,16 @@ pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
     // enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages. Expecting 3 in total.
-            2,
+            Some(PAGE_SIZE),
             Vec::new(),
         )
         .await?;
@@ -511,13 +517,15 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
     enable_tracing_subscriber();
 
     let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
+            None,
+            Vec::new()
         )
         .await?;
 

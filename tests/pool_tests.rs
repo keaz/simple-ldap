@@ -83,13 +83,13 @@ async fn test_update_uid_record() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_streaming_search() -> anyhow::Result<()> {
-    dispatch_parallel_test(client_test_cases::test_streaming_search).await
+async fn streaming_search() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::streaming_search).await
 }
 
 #[tokio::test]
-async fn test_streaming_search_paged() -> anyhow::Result<()> {
-    dispatch_parallel_test(client_test_cases::test_streaming_search_paged).await
+async fn streaming_search_paged() -> anyhow::Result<()> {
+    dispatch_parallel_test(client_test_cases::streaming_search_paged).await
 }
 
 #[tokio::test]
