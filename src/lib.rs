@@ -10,6 +10,7 @@
 //! - Search result [deserialization](#deserialization)
 //! - Connection pooling
 //! - Streaming search with native rust [`Stream`](https://docs.rs/futures/latest/futures/stream/trait.Stream.html)s
+//! - Server Side Sort
 //!
 //!
 //! ## Usage
@@ -131,12 +132,6 @@
 //! * `pool` - Enable connection pooling
 //!
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt, iter,
-};
-
-use filter::{AndFilter, EqFilter, Filter, OrFilter};
 use futures::{Stream, StreamExt, executor::block_on, stream};
 use ldap3::{
     Ldap, LdapConnAsync, LdapConnSettings, LdapError, LdapResult, Mod, Scope, SearchEntry,
@@ -145,16 +140,26 @@ use ldap3::{
 };
 use serde::{Deserialize, Serialize};
 use serde_value::Value;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt, iter, num::{NonZeroU16, NonZeroU32},
+};
 use thiserror::Error;
 use tracing::{Level, debug, error, info, instrument, warn};
 use url::Url;
+
+use filter::{AndFilter, EqFilter, Filter, OrFilter};
+use sort::adapter::ServerSideSort;
 
 pub mod filter;
 #[cfg(feature = "pool")]
 pub mod pool;
 pub mod simple_dn;
+mod sort;
 // Export the main type of the module right here in the root.
 pub use simple_dn::SimpleDN;
+// Used as an argument in the public API.
+pub use sort::adapter::SortBy;
 
 // Would likely be better if we could avoid re-exporting this.
 // I suspect it's only used in some configs?
@@ -180,7 +185,7 @@ pub struct LdapConfig {
 }
 
 ///
-/// High-level LDAP client wrapper ontop of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
+/// High-level LDAP client wrapper on top of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
 #[derive(Debug, Clone)]
@@ -557,130 +562,6 @@ impl LdapClient {
     /// Method will return a Stream. The stream will lazily fetch the results, resulting in a smaller
     /// memory footprint.
     ///
-    /// You might also want to take a look at [`streaming_search_paged()`].
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `base` - The base DN to search for the user
-    /// * `scope` - The scope of the search
-    /// * `filter` - The filter to search for the user
-    /// * `attributes` - The attributes to return from the search
-    ///
-    ///
-    /// # Returns
-    ///
-    /// A stream that can be used to iterate through the search results.
-    ///
-    ///
-    /// ## Blocking drop caveat
-    ///
-    /// Dropping this stream may issue blocking network requests to cancel the search.
-    /// Running the stream to it's end will minimize the chances of this happening.
-    /// You should take this into account if latency is critical to your application.
-    ///
-    /// We're waiting for [`AsyncDrop`](https://github.com/rust-lang/rust/issues/126482) for implementing this properly.
-    ///
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use simple_ldap::{
-    ///     LdapClient, LdapConfig,
-    ///     filter::EqFilter,
-    ///     ldap3::Scope
-    /// };
-    /// use url::Url;
-    /// use serde::Deserialize;
-    /// use futures::StreamExt;
-    ///
-    ///
-    /// #[derive(Deserialize, Debug)]
-    /// struct User {
-    ///     uid: String,
-    ///     cn: String,
-    ///     sn: String,
-    /// }
-    ///
-    /// #[tokio::main]
-    /// async fn main(){
-    ///     let ldap_config = LdapConfig {
-    ///         bind_dn: String::from("cn=manager"),
-    ///         bind_password: String::from("password"),
-    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
-    ///         connection_settings: None
-    ///     };
-    ///
-    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
-    ///
-    ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
-    ///     let attributes = vec!["cn", "sn", "uid"];
-    ///
-    ///     let stream = client.streaming_search(
-    ///         "",
-    ///         Scope::OneLevel,
-    ///         &name_filter,
-    ///         attributes
-    ///     ).await.unwrap();
-    ///
-    ///     // The returned stream is not Unpin, so you may need to pin it to use certain operations,
-    ///     // such as next() below.
-    ///     let mut pinned_steam = Box::pin(stream);
-    ///
-    ///     while let Some(result) = pinned_steam.next().await {
-    ///         match result {
-    ///             Ok(element) => {
-    ///                 let user: User = element.to_record().unwrap();
-    ///                 println!("User: {:?}", user);
-    ///             }
-    ///             Err(err) => {
-    ///                 println!("Error: {:?}", err);
-    ///             }
-    ///         }
-    ///     }
-    /// }
-    /// ```
-    ///
-    pub async fn streaming_search<'a, F, A, S>(
-        // This self reference  lifetime has some nuance behind it.
-        //
-        // In principle it could just be a value, but then you wouldn't be able to call this
-        // with a pooled client, as the deadpool `Object` wrapper only ever gives out references.
-        //
-        // The lifetime is needed to guarantee that the client is not returned to the pool before
-        // the returned stream is finished. This requirement is artificial. Internally the `ldap3` client
-        // just makes a copy. So this lifetime is here just to enforce correct pool usage.
-        &'a mut self,
-        base: &str,
-        scope: Scope,
-        filter: &F,
-        attributes: A,
-    ) -> Result<impl Stream<Item = Result<Record, Error>> + 'a + use<'a, F, A, S>, Error>
-    where
-        F: Filter,
-        A: AsRef<[S]> + Send + Sync + 'a,
-        S: AsRef<str> + Send + Sync + 'a,
-    {
-        let search_stream = self
-            .ldap
-            .streaming_search(base, scope, filter.filter().as_str(), attributes)
-            .await
-            .map_err(|ldap_error| {
-                Error::Query(
-                    format!("Error searching for record: {ldap_error:?}"),
-                    ldap_error,
-                )
-            })?;
-
-        to_native_stream(search_stream)
-    }
-
-    ///
-    /// This method is used to search multiple records from the LDAP server and results will be paginated.
-    /// Method will return a Stream. The stream will lazily fetch batches of results resulting in a smaller
-    /// memory footprint.
-    ///
     /// This is the recommended search method, especially if you don't know that the result set is going to be small.
     ///
     ///
@@ -689,12 +570,14 @@ impl LdapClient {
     /// * `base` - The base DN to search for the user
     /// * `scope` - The scope of the search
     /// * `filter` - The filter to search for the user
-    /// * `page_size` - The maximum number of records in a page
     /// * `attributes` - The attributes to return from the search
+    /// * `page_size` - Fetch the results in pages. Recommended for large result sets.
+    ///   Uses the Simple Paged Results LDAP extension.
+    /// * `sort_by` - Sort the results using Server Side Sort LDAP extension.
     ///
     ///
     /// # Returns
-    ///
+    //
     /// A stream that can be used to iterate through the search results.
     ///
     ///
@@ -712,13 +595,14 @@ impl LdapClient {
     ///
     /// ```no_run
     /// use simple_ldap::{
-    ///     LdapClient, LdapConfig,
+    ///     LdapClient, LdapConfig, SortBy,
     ///     filter::EqFilter,
-    ///     ldap3::Scope
+    ///     ldap3::Scope,
     /// };
     /// use url::Url;
     /// use serde::Deserialize;
     /// use futures::{StreamExt, TryStreamExt};
+    /// use std::num::NonZero;
     ///
     ///
     /// #[derive(Deserialize, Debug)]
@@ -742,13 +626,20 @@ impl LdapClient {
     ///
     ///     let name_filter = EqFilter::from(String::from("cn"), String::from("Sam"));
     ///     let attributes = vec!["cn", "sn", "uid"];
+    ///     let sort = vec![
+    ///         SortBy {
+    ///             attribute: String::from("sn"),
+    ///             reverse: true
+    ///         }
+    ///     ];
     ///
-    ///     let stream = client.streaming_search_paged(
-    ///         "",
+    ///     let stream = client.streaming_search(
+    ///         "ou=people,dc=example,dc=com",
     ///         Scope::OneLevel,
     ///         &name_filter,
     ///         attributes,
-    ///         200 // The pagesize
+    ///         Some(NonZero::new(200).unwrap()), // The pagesize
+    ///         sort
     ///     ).await.unwrap();
     ///
     ///     // Map the search results to User type.
@@ -763,7 +654,7 @@ impl LdapClient {
     /// }
     /// ```
     ///
-    pub async fn streaming_search_paged<'a, F, A, S>(
+    pub async fn streaming_search<'a, F, A, S>(
         // This self reference  lifetime has some nuance behind it.
         //
         // In principle it could just be a value, but then you wouldn't be able to call this
@@ -777,7 +668,9 @@ impl LdapClient {
         scope: Scope,
         filter: &F,
         attributes: A,
-        page_size: i32,
+        // The internal adapter takes i32, but half of its range is invalid.
+        page_size: Option<NonZeroU16>,
+        sort_by: Vec<SortBy>,
     ) -> Result<impl Stream<Item = Result<Record, Error>> + use<'a, F, A, S>, Error>
     where
         F: Filter,
@@ -785,10 +678,33 @@ impl LdapClient {
         A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
         S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a,
     {
-        let adapters: Vec<Box<dyn Adapter<'a, S, A>>> = vec![
-            Box::new(EntriesOnly::new()),
-            Box::new(PagedResults::new(page_size)),
+        // Define the needed adapters.
+
+        // Entries only is only needed with paging.
+        let (paging_adapter, entries_only_adapter) = page_size.map(|non_zero|
+                (PagedResults::new(non_zero.get().into()), EntriesOnly::new())
+            )
+            .map(|(page_adapter, entries_adapter)| (Box::new(page_adapter) as _, Box::new(entries_adapter) as _))
+            .unzip();
+
+        // Empty vec just means that we won't use the search adapter.
+        let sort_adapter: Option<Box<dyn Adapter<'a, S, A>>> = vec_to_option(sort_by)
+            .map(ServerSideSort::new)
+            .transpose()
+            .map_err(|duplicate_args_err| Error::Sort(duplicate_args_err.to_string()))?
+            .map(|adapter| Box::new(adapter) as _);
+
+        let maybe_adapters: Vec<Option<Box<dyn Adapter<'a, S, A>>>> = vec![
+            // Sort needs to be before paging, so that it's control will be included in all the page requests.
+            sort_adapter,
+            entries_only_adapter,
+            paging_adapter,
         ];
+
+        // This might end up as no adapters but that's perfectly fine too.
+        // Internally the non adapted streaming search would anyway just call the same thing with an empty adapter list.
+        let adapters: Vec<_> = maybe_adapters.into_iter().flatten().collect();
+
         let search_stream = self
             .ldap
             .streaming_search_with(adapters, base, scope, filter.filter().as_str(), attributes)
@@ -1259,8 +1175,8 @@ impl LdapClient {
         attributes: A,
     ) -> Result<Vec<T>, Error>
     where
-        A: AsRef<[S]> + Send + Sync + 'a,
-        S: AsRef<str> + Send + Sync + 'a,
+        A: AsRef<[S]> + Send + Sync + Clone + fmt::Debug + 'a,
+        S: AsRef<str> + Send + Sync + Clone + fmt::Debug + 'a,
         T: for<'de> serde::Deserialize<'de>,
     {
         let search = self
@@ -1323,7 +1239,7 @@ impl LdapClient {
             .for_each(|eq| or_filter.add(Box::new(eq)));
 
         let result = self
-            .streaming_search(base_dn, scope, &or_filter, attributes)
+            .streaming_search(base_dn, scope, &or_filter, attributes, None, Vec::new())
             .await;
 
         let mut members = Vec::new();
@@ -1526,6 +1442,11 @@ impl LdapClient {
 
         Ok(record)
     }
+}
+
+/// Empty vec becomes None, otherwise it gets wrapped in Some.
+fn vec_to_option<T>(vec: Vec<T>) -> Option<Vec<T>> {
+    if vec.is_empty() { None } else { Some(vec) }
 }
 
 /// A proxy type for deriving `Serialize` for `ldap3::SearchEntry`.
@@ -1862,7 +1783,7 @@ pub enum StreamResult<T> {
 ///
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Error occured when performing a LDAP query
+    /// Error occurred when performing a LDAP query
     #[error("{0}")]
     Query(String, #[source] LdapError),
     /// No records found for the search criteria
@@ -1874,16 +1795,16 @@ pub enum Error {
     /// Authenticating a user failed.
     #[error("{0}")]
     AuthenticationFailed(String),
-    /// Error occured when creating a record
+    /// Error occurred when creating a record
     #[error("{0}")]
     Create(String, #[source] LdapError),
-    /// Error occured when updating a record
+    /// Error occurred when updating a record
     #[error("{0}")]
     Update(String, #[source] LdapError),
-    /// Error occured when deleting a record
+    /// Error occurred when deleting a record
     #[error("{0}")]
     Delete(String, #[source] LdapError),
-    /// Error occured when mapping the search result to a struct
+    /// Error occurred when mapping the search result to a struct
     #[error("{0}")]
     Mapping(String),
     /// Error occurred while attempting to create an LDAP connection
@@ -1896,6 +1817,10 @@ pub enum Error {
     /// Error occurred while abandoning the search result
     #[error("{0}")]
     Abandon(String, #[source] LdapError),
+
+    /// Something wrong with Server Side Sort
+    #[error("{0}")]
+    Sort(String),
 }
 
 #[cfg(test)]

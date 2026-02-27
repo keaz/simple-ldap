@@ -13,10 +13,10 @@
 //!
 //! ## Idempotence
 //!
-//! Tests in this file should be **idenpotent.**
+//! Tests in this file should be **idempotent.**
 //! I.e. running the test twice against the same LDAP server should yield identical test results.
 //!
-//! This is needed for the above mentioned runnig of same tests with and without pooling.
+//! This is needed for the above mentioned running of same tests with and without pooling.
 //!
 //! It's enough to satisfy this requirement probabilistically e.g. by using random names
 //! that are unlikely to collide.
@@ -40,16 +40,17 @@
 
 use anyhow::anyhow;
 use futures::{StreamExt, TryStreamExt};
+use itertools::Itertools;
 use rand::Rng;
 use serde::Deserialize;
-use std::{collections::HashSet, ops::DerefMut, str::FromStr, sync::Once};
+use std::{collections::HashSet, num::{NonZero, NonZeroU16}, ops::DerefMut, str::FromStr, sync::Once};
 use tracing::Level;
 use tracing_subscriber::fmt::format::FmtSpan;
 use url::Url;
 use uuid::Uuid;
 
 use simple_ldap::{
-    Error, LdapClient, LdapConfig, SimpleDN,
+    Error, LdapClient, LdapConfig, SimpleDN, SortBy,
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
 };
@@ -75,7 +76,7 @@ pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct User {
     pub dn: SimpleDN,
     pub uid: String,
@@ -85,6 +86,7 @@ pub struct User {
 
 #[derive(Deserialize)]
 pub struct MultiValueUser {
+    #[expect(dead_code, reason = "Having this here will still test the deserialization.")]
     pub dn: SimpleDN,
     #[serde(rename = "objectClass")]
     pub object_class: Vec<String>,
@@ -285,7 +287,7 @@ pub async fn test_update_uid_record<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
+pub async fn streaming_search<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let name_filter = EqFilter::from("cn".to_string(), "James".to_string());
@@ -296,6 +298,8 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attra,
+            None,
+            Vec::new()
         )
         .await?;
 
@@ -319,22 +323,27 @@ pub async fn test_streaming_search<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
-pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
+// Can be used as an example value where one is needed.
+// Shouldn't be too big so that the searches actually get more than one page.
+const PAGE_SIZE: NonZeroU16 = NonZero::new(2).unwrap();
+
+pub async fn streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
-    enable_tracing_subscriber();
+    // enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages.
-            2,
+            Some(PAGE_SIZE),
+            Vec::new(),
         )
         .await?;
 
@@ -348,23 +357,147 @@ pub async fn test_streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
+pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    // enable_tracing_subscriber();
+
+    // Getting all the users.
+    let name_filter = EqFilter::from("objectClass".to_string(), "person".to_string());
+    let attributes = vec!["cn", "sn", "uid"];
+    let cn_sort = vec![SortBy {
+        attribute: "cn".to_owned(),
+        reverse: false,
+    }];
+
+    let stream = client
+        .streaming_search(
+            "ou=people,dc=example,dc=com",
+            simple_ldap::ldap3::Scope::OneLevel,
+            &name_filter,
+            &attributes,
+            // Testing with a pagesize smaller than the result set so that we actually see
+            // multiple pages.
+            Some(PAGE_SIZE),
+            cn_sort,
+        )
+        .await?;
+
+    let results: Vec<User> = stream
+        .and_then(async |record| record.to_record())
+        .try_collect()
+        .await?;
+
+    // Just a bit of debugging.
+    println!(
+        "Results sorted by CN: {:?}",
+        results.iter().map(|User { cn, .. }| cn).format(", ")
+    );
+
+    assert!(!results.is_empty());
+    assert!(results.is_sorted_by_key(|User { cn, .. }| cn.to_owned()));
+
+    // And then another sort attribute just to rule out chance.
+
+    let sn_sort = vec![SortBy {
+        attribute: "sn".to_owned(),
+        reverse: false,
+    }];
+
+    let stream = client
+        .streaming_search(
+            "ou=people,dc=example,dc=com",
+            simple_ldap::ldap3::Scope::OneLevel,
+            &name_filter,
+            &attributes,
+            // Testing with a pagesize smaller than the result set so that we actually see
+            // multiple pages.
+            Some(PAGE_SIZE),
+            sn_sort,
+        )
+        .await?;
+
+    let results: Vec<User> = stream
+        .and_then(async |record| record.to_record())
+        .try_collect()
+        .await?;
+
+    // Just a bit of debugging.
+    println!(
+        "Results sorted by SN: {:?}",
+        results.iter().map(|User { sn, .. }| sn).format(", ")
+    );
+
+    assert!(!results.is_empty());
+    assert!(results.is_sorted_by_key(|User { sn, .. }| sn.to_owned()));
+
+    Ok(())
+}
+
+pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
+    mut client: Client,
+) -> anyhow::Result<()> {
+    // enable_tracing_subscriber();
+
+    // Getting all the users.
+    let name_filter = EqFilter::from("objectClass".to_string(), "person".to_string());
+    let attributes = vec!["cn", "sn", "uid"];
+    let sort = vec![SortBy {
+        attribute: "cn".to_owned(),
+        // This is the key bit in this test.
+        reverse: true,
+    }];
+
+    let stream = client
+        .streaming_search(
+            "ou=people,dc=example,dc=com",
+            simple_ldap::ldap3::Scope::OneLevel,
+            &name_filter,
+            &attributes,
+            // Testing with a pagesize smaller than the result set so that we actually see
+            // multiple pages.
+            Some(PAGE_SIZE),
+            sort,
+        )
+        .await?;
+
+    let results: Vec<User> = stream
+        .and_then(async |record| record.to_record())
+        .try_collect()
+        .await?;
+
+    // Just a bit of debugging.
+    println!(
+        "Results: {:?}",
+        results.iter().map(|User { cn, .. }| cn).format(", ")
+    );
+
+    assert!(!results.is_empty());
+
+    let reversed_results = results.into_iter().rev();
+    assert!(reversed_results.is_sorted_by_key(|User { cn, .. }| cn.to_owned()));
+
+    Ok(())
+}
+
 pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     // Here we always want to trace.
-    enable_tracing_subscriber();
+    // enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
-        .streaming_search_paged(
+        .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
             // Testing with a pagesize smaller than the result set so that we actually see
             // multiple pages. Expecting 3 in total.
-            2,
+            Some(PAGE_SIZE),
+            Vec::new(),
         )
         .await?;
 
@@ -384,13 +517,15 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
     enable_tracing_subscriber();
 
     let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
-    let attra = vec!["cn", "sn", "uid"];
+    let attributes = vec!["cn", "sn", "uid"];
     let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
-            &attra,
+            &attributes,
+            None,
+            Vec::new()
         )
         .await?;
 

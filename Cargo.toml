@@ -6,16 +6,18 @@ readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "8.0.1"
+version = "9.0.0"
 edition = "2024"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.89"
+bytes = "1.11.1"
 chumsky = "0.10.1"
 deadpool = { version = "0.12.2", optional = true }
-derive_more = { version = "2.0.1", features = ["debug", "display"] }
+derive_more = { version = "2.0.1", features = ["debug", "display", "try_from"] }
 futures = "0.3.31"
 itertools = "0.14.0"
 ldap3 = { version = "0.11.5", default-features = false }

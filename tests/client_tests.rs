@@ -66,15 +66,27 @@ async fn test_update_uid_record() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_streaming_search() -> anyhow::Result<()> {
+async fn streaming_search() -> anyhow::Result<()> {
     let client = get_test_client().await?;
-    client_test_cases::test_streaming_search(Box::new(client)).await
+    client_test_cases::streaming_search(Box::new(client)).await
 }
 
 #[tokio::test]
-async fn test_streaming_search_paged() -> anyhow::Result<()> {
+async fn streaming_search_paged() -> anyhow::Result<()> {
     let client = get_test_client().await?;
-    client_test_cases::test_streaming_search_paged(Box::new(client)).await
+    client_test_cases::streaming_search_paged(Box::new(client)).await
+}
+
+#[tokio::test]
+async fn sorted_paged_search() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::sorted_paged_search(Box::new(client)).await
+}
+
+#[tokio::test]
+async fn sorted_paged_search_reverse() -> anyhow::Result<()> {
+    let client = get_test_client().await?;
+    client_test_cases::sorted_paged_search_reverse(Box::new(client)).await
 }
 
 #[tokio::test]
