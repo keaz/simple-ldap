@@ -86,7 +86,8 @@ pub struct User {
 
 #[derive(Deserialize)]
 pub struct MultiValueUser {
-    pub _dn: SimpleDN,
+    #[expect(dead_code, reason = "Having this here will still test the deserialization.")]
+    pub dn: SimpleDN,
     #[serde(rename = "objectClass")]
     pub object_class: Vec<String>,
     pub uid: Vec<String>,

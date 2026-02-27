@@ -1,5 +1,5 @@
 //! This module implements Server Side Sort (SSS) search extension
-//! as described in [RFC 2891](datatracker.ietf.org/doc/rfc2891/).
+//! as described in [RFC 2891](https://datatracker.ietf.org/doc/rfc2891/).
 
 use async_trait::async_trait;
 use itertools::Itertools;
