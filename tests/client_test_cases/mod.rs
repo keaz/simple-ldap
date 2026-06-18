@@ -728,9 +728,10 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     let result = client
-        .get_associtated_groups(
+        .get_associated_groups(
             "ou=group,dc=example,dc=com",
             "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
+            None
         )
         .await?;
 
