@@ -1361,6 +1361,7 @@ impl LdapClient {
     ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
+    /// * `grp_obj_class` - An optional `objectClass` in case
     ///
     /// # Returns
     ///
@@ -1386,7 +1387,8 @@ impl LdapClient {
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
     ///     let result = client.get_associated_groups("ou=groups,dc=example,dc=com",
-    ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
+    ///         "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com",
+    ///         None).await;
     /// }
     /// ```
     pub async fn get_associated_groups(
@@ -1451,6 +1453,50 @@ impl LdapClient {
             .collect::<Vec<String>>();
 
         Ok(record)
+    }
+
+    ///
+    /// Get the groups associated with a user in the LDAP server. The user will be searched in the provided base DN.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_ou` - The ou to search for the groups
+    /// * `user_dn` - The dn of the user
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>, Error>` - Returns a vector of group names
+    ///
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
+    ///     };
+    ///
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
+    ///
+    ///     let result = client.get_associated_groups("ou=groups,dc=example,dc=com",
+    ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
+    /// }
+    /// ```
+    #[deprecated = "foo"]
+    pub async fn get_associtated_groups(
+        &mut self,
+        group_ou: &str,
+        user_dn: &str,
+    ) -> Result<Vec<String>, Error> {
+        self.get_associated_groups(group_ou, user_dn, None).await
     }
 }
 
