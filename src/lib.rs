@@ -176,6 +176,30 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
+/// Possible choices for the objectClass attribute of group entries.
+#[derive(Debug, Copy, Clone)]
+pub enum GroupObjectClass {
+    Group,
+    GroupOfNames,
+    GroupOfUniqueNames,
+}
+
+impl GroupObjectClass {
+    fn as_str(&self) -> &'static str {
+        match *self {
+            Self::Group => "group",
+            Self::GroupOfNames => "groupOfNames",
+            Self::GroupOfUniqueNames => "groupOfUniqueNames",
+        }
+    }
+}
+
+impl Default for GroupObjectClass {
+    fn default() -> Self {
+        Self::GroupOfNames
+    }
+}
+
 /// Configuration and authentication for LDAP connection
 #[derive(derive_more::Debug, Clone)]
 pub struct LdapConfig {
@@ -1361,7 +1385,7 @@ impl LdapClient {
     ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
-    /// * `grp_obj_class` - An optional `objectClass` in case
+    /// * `grp_obj_class` - An optional [`GroupObjectClass`]
     ///
     /// # Returns
     ///
@@ -1395,11 +1419,11 @@ impl LdapClient {
         &mut self,
         group_ou: &str,
         user_dn: &str,
-        grp_obj_cls: Option<&str>,
+        grp_obj_cls: Option<GroupObjectClass>,
     ) -> Result<Vec<String>, Error> {
         let group_filter = Box::new(EqFilter::from(
             "objectClass".to_string(),
-            grp_obj_cls.unwrap_or("groupOfNames").into(),
+            grp_obj_cls.unwrap_or_default().as_str().into(),
         ));
 
         let user_filter = Box::new(EqFilter::from("member".to_string(), user_dn.to_string()));
