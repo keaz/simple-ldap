@@ -1521,7 +1521,12 @@ impl LdapClient {
         group_ou: &str,
         user_dn: &str,
     ) -> Result<Vec<String>, Error> {
-        self.get_associated_groups(group_ou, user_dn, None).await
+        match self.get_associated_groups(group_ou, user_dn, None).await {
+            Ok(v) if v.is_empty() => Err(Error::NotFound(String::from(
+                "User does not belong to any groups",
+            ))),
+            r => r,
+        }
     }
 }
 
