@@ -56,7 +56,7 @@ use url::Url;
 use uuid::Uuid;
 
 use simple_ldap::{
-    Error, LdapClient, LdapConfig, SimpleDN, SortBy,
+    Error, GroupObjectClass, LdapClient, LdapConfig, SimpleDN, SortBy,
     filter::{ContainsFilter, EqFilter},
     ldap3::{Mod, Scope},
 };
@@ -731,7 +731,7 @@ pub async fn test_associated_groups<Client: DerefMut<Target = LdapClient>>(
         .get_associated_groups(
             "ou=group,dc=example,dc=com",
             "uid=e219fbc0-6df5-4bc3-a6ee-986843bb157e,ou=people,dc=example,dc=com",
-            None
+            GroupObjectClass::default(),
         )
         .await?;
 

@@ -177,6 +177,9 @@ const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
 /// Possible choices for the `objectClass` attribute of group entries.
+///
+/// `GroupOfNames` is currently regarded as the default variant and is thus the one being returned
+/// by the impl of `Default`.
 #[derive(Debug, Copy, Clone)]
 pub enum GroupObjectClass {
     Group,
@@ -184,12 +187,12 @@ pub enum GroupObjectClass {
     GroupOfUniqueNames,
 }
 
-impl GroupObjectClass {
-    fn as_str(&self) -> &'static str {
+impl fmt::Display for GroupObjectClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::Group => "group",
-            Self::GroupOfNames => "groupOfNames",
-            Self::GroupOfUniqueNames => "groupOfUniqueNames",
+            Self::Group => write!(f, "group"),
+            Self::GroupOfNames => write!(f, "groupOfNames"),
+            Self::GroupOfUniqueNames => write!(f, "groupOfUniqueNames"),
         }
     }
 }
@@ -1385,7 +1388,7 @@ impl LdapClient {
     ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
-    /// * `grp_obj_cls` - The object class of groups to use during the search. When `None` is provided it will default to "groupOfNames"
+    /// * `grp_obj_cls` - The object class of groups to use during the search
     ///
     /// # Returns
     ///
@@ -1412,18 +1415,18 @@ impl LdapClient {
     ///
     ///     let result = client.get_associated_groups("ou=groups,dc=example,dc=com",
     ///         "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com",
-    ///         None).await;
+    ///         GroupObjectClass::default()).await;
     /// }
     /// ```
     pub async fn get_associated_groups(
         &mut self,
         group_ou: &str,
         user_dn: &str,
-        grp_obj_cls: Option<GroupObjectClass>,
+        grp_obj_cls: GroupObjectClass,
     ) -> Result<Vec<String>, Error> {
         let group_filter = Box::new(EqFilter::from(
             "objectClass".to_string(),
-            grp_obj_cls.unwrap_or_default().as_str().into(),
+            grp_obj_cls.to_string(),
         ));
 
         let user_filter = Box::new(EqFilter::from("member".to_string(), user_dn.to_string()));
@@ -1521,7 +1524,10 @@ impl LdapClient {
         group_ou: &str,
         user_dn: &str,
     ) -> Result<Vec<String>, Error> {
-        match self.get_associated_groups(group_ou, user_dn, None).await {
+        match self
+            .get_associated_groups(group_ou, user_dn, GroupObjectClass::default())
+            .await
+        {
             Ok(v) if v.is_empty() => Err(Error::NotFound(String::from(
                 "User does not belong to any groups",
             ))),
