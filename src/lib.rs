@@ -1388,7 +1388,7 @@ impl LdapClient {
     ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
-    /// * `grp_obj_cls` - The object class of groups to use during the search
+    /// * `group_object_class` - The object class of groups to use during the search
     ///
     /// # Returns
     ///
@@ -1398,7 +1398,7 @@ impl LdapClient {
     /// # Example
     ///
     /// ```no_run
-    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use simple_ldap::{GroupObjectClass, LdapClient, LdapConfig};
     /// use url::Url;
     ///
     /// #[tokio::main]
@@ -1422,11 +1422,11 @@ impl LdapClient {
         &mut self,
         group_ou: &str,
         user_dn: &str,
-        grp_obj_cls: GroupObjectClass,
+        group_object_class: GroupObjectClass,
     ) -> Result<Vec<String>, Error> {
         let group_filter = Box::new(EqFilter::from(
             "objectClass".to_string(),
-            grp_obj_cls.to_string(),
+            group_object_class.to_string(),
         ));
 
         let user_filter = Box::new(EqFilter::from("member".to_string(), user_dn.to_string()));
