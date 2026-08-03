@@ -176,6 +176,33 @@ pub extern crate ldap3;
 const LDAP_ENTRY_DN: &str = "entryDN";
 const NO_SUCH_RECORD: u32 = 32;
 
+/// Possible choices for the `objectClass` attribute of group entries.
+///
+/// `GroupOfNames` is currently regarded as the default variant and is thus the one being returned
+/// by the impl of `Default`.
+#[derive(Debug, Copy, Clone)]
+pub enum GroupObjectClass {
+    Group,
+    GroupOfNames,
+    GroupOfUniqueNames,
+}
+
+impl fmt::Display for GroupObjectClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Group => write!(f, "group"),
+            Self::GroupOfNames => write!(f, "groupOfNames"),
+            Self::GroupOfUniqueNames => write!(f, "groupOfUniqueNames"),
+        }
+    }
+}
+
+impl Default for GroupObjectClass {
+    fn default() -> Self {
+        Self::GroupOfNames
+    }
+}
+
 /// Configuration and authentication for LDAP connection
 #[derive(derive_more::Debug, Clone)]
 pub struct LdapConfig {
@@ -1361,16 +1388,17 @@ impl LdapClient {
     ///
     /// * `group_ou` - The ou to search for the groups
     /// * `user_dn` - The dn of the user
+    /// * `group_object_class` - The object class of groups to use during the search
     ///
     /// # Returns
     ///
-    /// * `Result<Vec<String>, Error>` - Returns a vector of group names
+    /// * `Result<Vec<String>, Error>` - Returns a vector of group names. Will be empty when there are no associated groups
     ///
     ///
     /// # Example
     ///
     /// ```no_run
-    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use simple_ldap::{GroupObjectClass, LdapClient, LdapConfig};
     /// use url::Url;
     ///
     /// #[tokio::main]
@@ -1385,18 +1413,20 @@ impl LdapClient {
     ///
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///
-    ///     let result = client.get_associtated_groups("ou=groups,dc=example,dc=com",
-    ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
+    ///     let result = client.get_associated_groups("ou=groups,dc=example,dc=com",
+    ///         "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com",
+    ///         GroupObjectClass::default()).await;
     /// }
     /// ```
-    pub async fn get_associtated_groups(
+    pub async fn get_associated_groups(
         &mut self,
         group_ou: &str,
         user_dn: &str,
+        group_object_class: GroupObjectClass,
     ) -> Result<Vec<String>, Error> {
         let group_filter = Box::new(EqFilter::from(
             "objectClass".to_string(),
-            "groupOfNames".to_string(),
+            group_object_class.to_string(),
         ));
 
         let user_filter = Box::new(EqFilter::from("member".to_string(), user_dn.to_string()));
@@ -1431,9 +1461,7 @@ impl LdapClient {
         let records = result.unwrap().0;
 
         if records.is_empty() {
-            return Err(Error::NotFound(String::from(
-                "User does not belong to any groups",
-            )));
+            return Ok(Vec::new());
         }
 
         let record = records
@@ -1450,6 +1478,61 @@ impl LdapClient {
             .collect::<Vec<String>>();
 
         Ok(record)
+    }
+
+    ///
+    /// Get the groups associated with a user in the LDAP server. The user will be searched in the provided base DN.
+    ///
+    /// # Arguments
+    ///
+    /// * `group_ou` - The ou to search for the groups
+    /// * `user_dn` - The dn of the user
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>, Error>` - Returns a vector of group names
+    ///
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use simple_ldap::{LdapClient, LdapConfig};
+    /// use url::Url;
+    ///
+    /// #[tokio::main]
+    /// async fn main(){
+    ///     let ldap_config = LdapConfig {
+    ///         bind_dn: String::from("cn=manager"),
+    ///         bind_password: String::from("password"),
+    ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
+    ///         dn_attribute: None,
+    ///         connection_settings: None
+    ///     };
+    ///
+    ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
+    ///
+    ///     let result = client.get_associtated_groups("ou=groups,dc=example,dc=com",
+    ///     "uid=bd9b91ec-7a69-4166-bf67-cc7e553b2fd9,ou=people,dc=example,dc=com").await;
+    /// }
+    /// ```
+    #[deprecated(
+        since = "10.1.0",
+        note = "Please use `get_associated_groups` instead which also allows specifiying a group's object class. This method will be removed in a future release."
+    )]
+    pub async fn get_associtated_groups(
+        &mut self,
+        group_ou: &str,
+        user_dn: &str,
+    ) -> Result<Vec<String>, Error> {
+        match self
+            .get_associated_groups(group_ou, user_dn, GroupObjectClass::default())
+            .await
+        {
+            Ok(v) if v.is_empty() => Err(Error::NotFound(String::from(
+                "User does not belong to any groups",
+            ))),
+            r => r,
+        }
     }
 }
 
@@ -1483,7 +1566,7 @@ struct SerializeWrapper(#[serde(with = "Ldap3SearchEntry")] ldap3::SearchEntry);
 
 // Allowing users to debug serialization issues from the logs.
 #[instrument(level = Level::DEBUG)]
-fn to_signle_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
+fn to_single_value<T: for<'a> Deserialize<'a>>(search_entry: SearchEntry) -> Result<T, Error> {
     let string_attributes = search_entry
         .attrs
         .into_iter()
@@ -1765,7 +1848,7 @@ mod tests {
             bin_attrs: HashMap::new(),
         };
 
-        let test = to_signle_value::<TestSingleValued>(entry);
+        let test = to_single_value::<TestSingleValued>(entry);
 
         let test = test.unwrap();
         assert_eq!(test.key1, "value1".to_string());
