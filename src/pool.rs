@@ -1,5 +1,5 @@
 use deadpool::{
-    managed::{self, Metrics, RecycleResult},
+    managed::{self, Metrics, RecycleError, RecycleResult},
     managed_reexports,
 };
 /// # Pool
@@ -104,8 +104,18 @@ impl deadpool::managed::Manager for Manager {
         _metrics: &Metrics,
     ) -> RecycleResult<Self::Error> {
         debug!("recycling connection");
-        client.unbind_ref().await?;
-        Ok(())
+        client
+            .ldap
+            .simple_bind(&*self.config.bind_dn, &*self.config.bind_password)
+            .await
+            .map_err(|e| Self::Error::Connection("simple bind attempt failed".into(), e))?
+            .success()
+            .map_err(|e| Self::Error::Connection("simple bind returned an error".into(), e))?;
+        if client.ldap.is_closed() {
+            Err(RecycleError::message("ldap connection is closed"))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -118,16 +128,4 @@ pub async fn build_connection_pool(
     let pool = Pool::builder(manager).max_size(pool_size.get()).build()?;
 
     Ok(pool)
-}
-
-impl LdapClient {
-    /// End the LDAP connection.
-    ///
-    /// This unbind by reference is needed by deadpool.
-    async fn unbind_ref(&mut self) -> Result<(), Error> {
-        match self.ldap.unbind().await {
-            Ok(_) => Ok(()),
-            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error)),
-        }
-    }
 }
