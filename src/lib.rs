@@ -59,7 +59,6 @@
 //!         bind_dn: String::from("cn=manager"),
 //!         bind_password: String::from("password"),
 //!         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-//!         dn_attribute: None,
 //!         connection_settings: None
 //!     };
 //!     let mut client = LdapClient::new(ldap_config).await.unwrap();
@@ -171,9 +170,10 @@ use crate::stream::to_native_stream;
 
 // Would likely be better if we could avoid re-exporting this.
 // I suspect it's only used in some configs?
+// Also in errors actually.
 pub extern crate ldap3;
 
-const LDAP_ENTRY_DN: &str = "entryDN";
+
 const NO_SUCH_RECORD: u32 = 32;
 
 /// Possible choices for the `objectClass` attribute of group entries.
@@ -212,7 +212,6 @@ pub struct LdapConfig {
     pub bind_dn: String,
     #[debug(skip)] // We don't want to print passwords.
     pub bind_password: String,
-    pub dn_attribute: Option<String>,
     /// Low level configuration for the connection.
     /// You can probably skip it.
     #[debug(skip)] // Debug omitted, because it just doesn't implement it.
@@ -223,17 +222,22 @@ pub struct LdapConfig {
 /// High-level LDAP client wrapper on top of ldap3 crate. This wrapper provides a high-level interface to perform LDAP operations
 /// including authentication, search, update, delete
 ///
-#[derive(Debug, Clone)]
+#[derive(derive_more::Debug, Clone)]
 pub struct LdapClient {
     /// The internal connection handle.
     ldap: Ldap,
-    dn_attr: Option<String>,
+
+    // We need to store credentials for rebinding in `self::authenticate()`.
+    bind_dn: String,
+    #[debug(skip)]
+    bind_password: String,
 }
 
 impl LdapClient {
     ///
     /// Creates a new asynchronous LDAP client.s
     /// It's capable of running multiple operations concurrently.
+    ///
     ///
     /// # Bind
     ///
@@ -258,15 +262,12 @@ impl LdapClient {
 
         ldap3::drive!(conn);
 
-        ldap.simple_bind(&config.bind_dn, &config.bind_password)
-            .await
-            .map_err(|ldap_err| Error::Connection(String::from("Bind failed"), ldap_err))?
-            .success()
-            .map_err(|ldap_err| Error::Connection(String::from("Bind failed"), ldap_err))?;
+        bind(&mut ldap, &config.bind_dn, &config.bind_password).await?;
 
-        Ok(Self {
-            dn_attr: config.dn_attribute,
+        Ok(LdapClient {
             ldap,
+            bind_dn: config.bind_dn,
+            bind_password: config.bind_password
         })
     }
 }
@@ -300,20 +301,37 @@ impl LdapClient {
     }
 
     ///
-    /// The user is authenticated by searching for the user in the LDAP server.
-    /// The search is performed using the provided filter. The filter should be a filter that matches a single user.
+    /// Implements a typical "login with LDAP" authentication flow. Intended for server side use.
+    ///
+    /// The user is authenticated by searching for the user in the LDAP server and then trying to bind
+    /// with the provided password and DN found from the `dn_attribute` attribute.
+    ///
+    /// The first few arguments define a search  performed using the provided filter. The filter should be a filter that matches a single user.
+    ///
+    ///
+    /// # Note ⚠️
+    ///
+    /// This will perform binds on the connection. Clones of this client should not be used elsewhere
+    /// concurrently.
+    ///
     ///
     /// # Arguments
     ///
-    /// * `base` - The base DN to search for the user
-    /// * `uid` - The uid of the user
-    /// * `password` - The password of the user
-    /// * `filter` - The filter to search for the user
+    /// ## Search
+    ///
+    /// The first few arguments search for a single user.
+    /// It's okay if the search matches nothing but multiple results will be an error.
+    ///
+    /// - `base` - The base DN for the user search
+    /// - `scope` - Scope for the search
+    /// - `filter` - The filter to search for the user
     ///
     ///
-    /// # Returns
+    /// ## Bind
     ///
-    /// * `Result<(), Error>` - Returns an error if the authentication fails
+    /// - `dn_attribute` - Single valued attribute on the LDAP user object that holds the user DN.
+    ///     - Very like you want to use ["entryDN"](https://datatracker.ietf.org/doc/rfc5020/)
+    /// - `password` - The password of the user we are authenticating
     ///
     ///
     /// # Example
@@ -321,6 +339,8 @@ impl LdapClient {
     /// ```no_run
     /// use simple_ldap::{
     ///     LdapClient, LdapConfig,
+    ///     AuthenticationResult,
+    ///     ldap3::Scope,
     ///     filter::EqFilter
     /// };
     /// use url::Url;
@@ -331,67 +351,91 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
     ///     let mut client = LdapClient::new(ldap_config).await.unwrap();
     ///     let name_filter = EqFilter::from("cn".to_string(), "Sam".to_string());
     ///
-    ///     let result = client.authenticate("", "Sam", "password", Box::new(name_filter)).await;
+    ///     let result = client.authenticate(
+    ///         "ou=people,dc=example,dc=com",
+    ///         Scope::Subtree,
+    ///         &name_filter,
+    ///         "entryDN",
+    ///         "password"
+    ///     ).await;
+    ///
+    ///     match result {
+    ///         Ok(AuthenticationResult::Success) => todo!(),
+    ///         Ok(AuthenticationResult::UserNotFound) => todo!(),
+    ///         Ok(AuthenticationResult::WrongPassword) => todo!(),
+    ///         Err(e) => todo!()
+    ///     }
     /// }
     /// ```
-    pub async fn authenticate(
+    ///
+    /// # See also
+    ///
+    /// LDAP wiki has [a good article](https://ldapwiki.com/wiki/Wiki.jsp?page=LDAP%20Authentication) on LDAP authentication.
+    /// This method essentially implements the most common flow.
+    pub async fn authenticate<F>(
         &mut self,
         base: &str,
-        uid: &str,
+        scope: Scope,
+        filter: &F,
+        dn_attribute: &str,
         password: &str,
-        filter: Box<dyn Filter>,
-    ) -> Result<(), Error> {
-        let attr_dn = self.dn_attr.as_deref().unwrap_or(LDAP_ENTRY_DN);
-
-        let rs = self
-            .ldap
-            .search(base, Scope::OneLevel, filter.filter().as_str(), [attr_dn])
-            .await
-            .map_err(|e| Error::Query("Unable to query user for authentication".into(), e))?;
-
-        let (data, _rs) = rs
-            .success()
-            .map_err(|e| Error::Query("Could not find user for authentication".into(), e))?;
-
-        if data.is_empty() {
-            return Err(Error::NotFound(format!("No record found {uid:?}")));
+    ) -> Result<AuthenticationResult, Error>
+    where
+        F: Filter
+    {
+        match self.search_inner(base, scope, filter, [dn_attribute]).await {
+            // Not finding a user is not an error here.
+            Err(Error::NotFound(..)) => Ok(AuthenticationResult::UserNotFound),
+            // Other errors we pass through.
+            // This includes finding multiple matches.
+            Err(e) => Err(e),
+            // Exactly one user found, continuing authentication.
+            Ok(user_entry) => {
+                // Get the value of the dn_attribute.
+                // (Honestly I'm not sure why we don't just use `dn` directly?)
+                match user_entry.attrs.get(dn_attribute).map(Vec::as_slice) {
+                    // No values
+                    None | Some([]) => {
+                        let message = format!("'DN Attribute' {dn_attribute} wasn't defined on object {dn}",
+                            dn = user_entry.dn
+                        );
+                        Err(Error::AuthenticationFailed(message))
+                    },
+                    // Too many values
+                    Some([_, _, ..]) => {
+                        let message = format!("'DN Attribute' {dn_attribute} is multivalued (on object {dn})",
+                            dn = user_entry.dn
+                        );
+                        Err(Error::AuthenticationFailed(message))
+                    }
+                    // Exactly one value found, as it should.
+                    Some([dn_attribute_value]) => {
+                        // ⚠️ This is a tad unsound. If there are other clones using this ldap handle they too may
+                        // temporarily switch to the user we're authenticating. Ongoing operations may also be cancelled?
+                        // An alternative approach might be to open a new connection for this bind and thus not mess
+                        // with the existing one.
+                        match bind(&mut self.ldap, dn_attribute_value, password).await {
+                            // Authentication was successful. Still need to restore the original user.
+                            Ok(()) => {
+                                bind(&mut self.ldap, &self.bind_dn, &self.bind_password).await
+                                    // Opting to panic here as the connection would be otherwise left with
+                                    // an unexpected user. Some kind of poisoning would be a more complicated option.
+                                    .expect("Failed to restore the connection to it's original user.");
+                                Ok(AuthenticationResult::Success)
+                            },
+                            Err(Error::AuthenticationFailed(_)) => Ok(AuthenticationResult::WrongPassword),
+                            Err(e) => Err(e)
+                        }
+                    }
+                }
+            }
         }
-        if data.len() > 1 {
-            return Err(Error::MultipleResults(format!(
-                "Found multiple records for uid {uid:?}"
-            )));
-        }
-
-        let record = data.first().unwrap().to_owned();
-        let record = SearchEntry::construct(record);
-        let result: HashMap<&str, String> = record
-            .attrs
-            .iter()
-            .filter(|(_, value)| !value.is_empty())
-            .map(|(arrta, value)| (arrta.as_str(), value.first().unwrap().clone()))
-            .collect();
-
-        let entry_dn = result.get(attr_dn).ok_or_else(|| {
-            Error::AuthenticationFailed(format!("Unable to retrieve DN of user {uid}"))
-        })?;
-
-        self.ldap
-            .simple_bind(entry_dn, password)
-            .await
-            .map_err(|_| Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}")))
-            .and_then(|r| {
-                r.success().map_err(|_| {
-                    Error::AuthenticationFailed(format!("Error authenticating user: {uid:?}"))
-                })
-            })
-            .and(Ok(()))
     }
 
     async fn search_inner<'a, F, A, S>(
@@ -488,7 +532,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -566,7 +609,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -653,7 +695,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -783,7 +824,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -853,7 +893,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -970,7 +1009,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1037,7 +1075,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1100,7 +1137,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1187,7 +1223,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1334,7 +1369,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1407,7 +1441,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1505,7 +1538,6 @@ impl LdapClient {
     ///         bind_dn: String::from("cn=manager"),
     ///         bind_password: String::from("password"),
     ///         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-    ///         dn_attribute: None,
     ///         connection_settings: None
     ///     };
     ///
@@ -1534,6 +1566,29 @@ impl LdapClient {
             r => r,
         }
     }
+}
+
+/// Result type for [LdapClient::authenticate()].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthenticationResult {
+    /// User authenticated successfully.
+    Success,
+    /// No user was found.
+    UserNotFound,
+    /// User was found but the authentication failed.
+    WrongPassword,
+}
+
+
+/// Private helper for binding.
+async fn bind(inner_handle: &mut Ldap , bind_dn: &str, bind_password: &str) -> Result<(), Error> {
+    inner_handle.simple_bind(bind_dn, bind_password)
+        .await
+        .map_err(|ldap_err| Error::AuthenticationFailed(format!("Bind failed: {ldap_err}")))?
+        .success()
+        .map_err(|ldap_err| Error::AuthenticationFailed(format!("Bind failed: {ldap_err}")))?;
+
+    Ok(())
 }
 
 /// Empty vec becomes None, otherwise it gets wrapped in Some.
@@ -1764,7 +1819,7 @@ pub enum Error {
     /// Multiple records found for the search criteria
     #[error("{0}")]
     MultipleResults(String),
-    /// Authenticating a user failed.
+    /// Bind failed.
     #[error("{0}")]
     AuthenticationFailed(String),
     /// Error occurred when creating a record

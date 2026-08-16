@@ -35,7 +35,6 @@ use deadpool::{
 ///         bind_dn: String::from("cn=manager"),
 ///         bind_password: String::from("password"),
 ///         ldap_url: Url::parse("ldap://localhost:1389/dc=example,dc=com").unwrap(),
-///         dn_attribute: None,
 ///         connection_settings: None
 ///     };
 ///     let pool_size = NonZeroUsize::new(10).unwrap();

@@ -69,6 +69,52 @@ cn: David
 ou: people
 uid: 4d9b08fe-9a14-4df0-9831-ea9992837f0d
 
+dn: ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: organizationalUnit
+description: Webcomic characters for testing server side sort
+
+dn: cn=Techno-Mage,ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+cn: Techno-Mage
+sn: Mage
+
+dn: cn=Spirit of the Machine,ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+cn: Spirit of the Machine
+sn: Machine
+
+dn: cn=Fossangel,ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+cn: Fossangel
+sn: Angel
+
+dn: cn=Penguin,ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+cn: Penguin
+sn: Penguin
+
+dn: cn=OpenBlade,ou=analognowhere,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: inetorgperson
+objectClass: organizationalPerson
+objectClass: person
+cn: OpenBlade
+sn: Blade
+
+
 dn: ou=group,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit

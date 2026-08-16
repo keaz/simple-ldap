@@ -57,7 +57,6 @@ async fn main(){
         bind_dn: String::from("cn=manager"),
         bind_password: String::from("password"),
         ldap_url: Url::parse("ldaps://localhost:1389/dc=example,dc=com").unwrap(),
-        dn_attribute: None,
         connection_settings: None
     };
     let mut client = LdapClient::new(ldap_config).await.unwrap();

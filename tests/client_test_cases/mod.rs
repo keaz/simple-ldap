@@ -43,6 +43,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use rand::RngExt;
 use serde::Deserialize;
+use serde_aux::serde_introspection::serde_introspect;
 use std::{
     collections::HashSet,
     num::{NonZero, NonZeroU16},
@@ -56,9 +57,7 @@ use url::Url;
 use uuid::Uuid;
 
 use simple_ldap::{
-    Error, GroupObjectClass, LdapClient, LdapConfig, SimpleDN, SortBy,
-    filter::{ContainsFilter, EqFilter},
-    ldap3::{Mod, Scope},
+    AuthenticationResult, Error, GroupObjectClass, LdapClient, LdapConfig, SimpleDN, SortBy, filter::{ContainsFilter, EqFilter}, ldap3::{Mod, Scope},
 };
 
 pub async fn test_create_record<Client: DerefMut<Target = LdapClient>>(
@@ -342,7 +341,7 @@ pub async fn streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     // enable_tracing_subscriber();
 
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attributes = vec!["cn", "sn", "uid"];
+    let attributes = serde_introspect::<SlimUser>();
     let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
@@ -358,7 +357,7 @@ pub async fn streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
 
     let count = stream
         .and_then(async |record| record.to_record())
-        .try_fold(0, async |sum, _: User| Ok(sum + 1))
+        .try_fold(0, async |sum, _: SlimUser| Ok(sum + 1))
         .await?;
 
     assert_eq!(count, 3);
@@ -366,14 +365,23 @@ pub async fn streaming_search_paged<Client: DerefMut<Target = LdapClient>>(
     Ok(())
 }
 
+/// Simple user representation that can be used to deserialize test users.
+#[derive(Debug, Deserialize)]
+pub struct SlimUser {
+    // pub dn: SimpleDN,
+    pub cn: String,
+    pub sn: String,
+}
+
 pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
     mut client: Client,
 ) -> anyhow::Result<()> {
     // enable_tracing_subscriber();
 
-    // Getting all the users.
+    // Getting all users from a separate OU.
+    let base = "ou=analognowhere,ou=people,dc=example,dc=com";
     let name_filter = EqFilter::from("objectClass".to_string(), "person".to_string());
-    let attributes = vec!["cn", "sn", "uid"];
+    let attributes = serde_introspect::<SlimUser>();
     let cn_sort = vec![SortBy {
         attribute: "cn".to_owned(),
         reverse: false,
@@ -381,7 +389,7 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
 
     let stream = client
         .streaming_search(
-            "ou=people,dc=example,dc=com",
+            base,
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
@@ -392,7 +400,7 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
         )
         .await?;
 
-    let results: Vec<User> = stream
+    let results: Vec<SlimUser> = stream
         .and_then(async |record| record.to_record())
         .try_collect()
         .await?;
@@ -400,11 +408,11 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
     // Just a bit of debugging.
     println!(
         "Results sorted by CN: {:?}",
-        results.iter().map(|User { cn, .. }| cn).format(", ")
+        results.iter().map(|SlimUser { cn, .. }| cn).format(", ")
     );
 
     assert!(!results.is_empty());
-    assert!(results.is_sorted_by_key(|User { cn, .. }| cn.to_owned()));
+    assert!(results.is_sorted_by_key(|SlimUser { cn, .. }| cn.to_owned()));
 
     // And then another sort attribute just to rule out chance.
 
@@ -415,7 +423,7 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
 
     let stream = client
         .streaming_search(
-            "ou=people,dc=example,dc=com",
+            base,
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
@@ -426,7 +434,7 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
         )
         .await?;
 
-    let results: Vec<User> = stream
+    let results: Vec<SlimUser> = stream
         .and_then(async |record| record.to_record())
         .try_collect()
         .await?;
@@ -434,11 +442,11 @@ pub async fn sorted_paged_search<Client: DerefMut<Target = LdapClient>>(
     // Just a bit of debugging.
     println!(
         "Results sorted by SN: {:?}",
-        results.iter().map(|User { sn, .. }| sn).format(", ")
+        results.iter().map(|SlimUser { sn, .. }| sn).format(", ")
     );
 
     assert!(!results.is_empty());
-    assert!(results.is_sorted_by_key(|User { sn, .. }| sn.to_owned()));
+    assert!(results.is_sorted_by_key(|SlimUser { sn, .. }| sn.to_owned()));
 
     Ok(())
 }
@@ -448,9 +456,10 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
 ) -> anyhow::Result<()> {
     // enable_tracing_subscriber();
 
-    // Getting all the users.
+    // Getting all users from a separate OU.
+    let base = "ou=analognowhere,ou=people,dc=example,dc=com";
     let name_filter = EqFilter::from("objectClass".to_string(), "person".to_string());
-    let attributes = vec!["cn", "sn", "uid"];
+    let attributes = serde_introspect::<SlimUser>();
     let sort = vec![SortBy {
         attribute: "cn".to_owned(),
         // This is the key bit in this test.
@@ -459,7 +468,7 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
 
     let stream = client
         .streaming_search(
-            "ou=people,dc=example,dc=com",
+            base,
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
@@ -470,7 +479,7 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
         )
         .await?;
 
-    let results: Vec<User> = stream
+    let results: Vec<SlimUser> = stream
         .and_then(async |record| record.to_record())
         .try_collect()
         .await?;
@@ -478,13 +487,13 @@ pub async fn sorted_paged_search_reverse<Client: DerefMut<Target = LdapClient>>(
     // Just a bit of debugging.
     println!(
         "Results: {:?}",
-        results.iter().map(|User { cn, .. }| cn).format(", ")
+        results.iter().map(|SlimUser { cn, .. }| cn).format(", ")
     );
 
     assert!(!results.is_empty());
 
     let reversed_results = results.into_iter().rev();
-    assert!(reversed_results.is_sorted_by_key(|User { cn, .. }| cn.to_owned()));
+    assert!(reversed_results.is_sorted_by_key(|SlimUser { cn, .. }| cn.to_owned()));
 
     Ok(())
 }
@@ -495,11 +504,13 @@ pub async fn test_search_stream_drop<Client: DerefMut<Target = LdapClient>>(
     // Here we always want to trace.
     enable_tracing_subscriber();
 
+    // Getting all users from a separate OU.
+    let base = "ou=analognowhere,ou=people,dc=example,dc=com";
     let name_filter = ContainsFilter::from("cn".to_string(), "J".to_string());
-    let attributes = vec!["cn", "sn", "uid"];
+    let attributes = serde_introspect::<SlimUser>();
     let stream = client
         .streaming_search(
-            "ou=people,dc=example,dc=com",
+            base,
             simple_ldap::ldap3::Scope::OneLevel,
             &name_filter,
             &attributes,
@@ -525,8 +536,8 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
 ) -> anyhow::Result<()> {
     enable_tracing_subscriber();
 
-    let name_filter = EqFilter::from("cn".to_string(), "JamesX".to_string());
-    let attributes = vec!["cn", "sn", "uid"];
+    let name_filter = EqFilter::from("cn".to_string(), "NonExistent".to_string());
+    let attributes = serde_introspect::<SlimUser>();
     let stream = client
         .streaming_search(
             "ou=people,dc=example,dc=com",
@@ -540,7 +551,7 @@ pub async fn test_streaming_search_no_records<Client: DerefMut<Target = LdapClie
 
     let count = stream
         .and_then(async |record| record.to_record())
-        .try_fold(0, async |sum, _: User| Ok(sum + 1))
+        .try_fold(0, async |sum, _: SlimUser| Ok(sum + 1))
         .await?;
 
     assert_eq!(count, 0);
@@ -762,12 +773,12 @@ pub async fn test_authenticate_success<Client: DerefMut<Target = LdapClient>>(
 
     let filter = EqFilter::from("uid".to_string(), uid.clone());
     let auth_result = client
-        .authenticate(base, uid.as_str(), password.as_str(), Box::new(filter))
+        .authenticate(base, Scope::OneLevel, &filter, "entryDN", password.as_str())
         .await;
 
     client.delete(uid.as_str(), base).await?;
 
-    auth_result?;
+    assert_eq!(auth_result?, AuthenticationResult::Success);
 
     Ok(())
 }
@@ -794,16 +805,15 @@ pub async fn test_authenticate_wrong_password<Client: DerefMut<Target = LdapClie
 
     let filter = EqFilter::from("uid".to_string(), uid.clone());
     let auth_result = client
-        .authenticate(base, uid.as_str(), "definitely-wrong", Box::new(filter))
+        .authenticate(base, Scope::OneLevel, &filter, "entryDN", "definitely-wrong")
+
         .await;
 
     client.delete(uid.as_str(), base).await?;
 
-    match auth_result {
-        Err(Error::AuthenticationFailed(_)) => Ok(()),
-        Err(other) => Err(anyhow!("Unexpected error: {other:?}")),
-        Ok(_) => Err(anyhow!("Authentication succeeded unexpectedly")),
-    }
+    assert_eq!(auth_result?, AuthenticationResult::WrongPassword);
+
+    Ok(())
 }
 
 /***************
@@ -836,7 +846,6 @@ pub fn ldap_config() -> anyhow::Result<LdapConfig> {
         bind_dn: String::from("cn=manager"),
         bind_password: String::from("password"),
         ldap_url: Url::parse("ldap://localhost:1389/dc=example,dc=com")?,
-        dn_attribute: None,
         connection_settings: None,
     };
 
