@@ -56,10 +56,10 @@ use deadpool::{
 /// You cannot `unbind` the clients got from the pool.
 /// Just return them to the pool. It will take care of it.
 ///
-use std::num::NonZeroUsize;
+use std::{borrow::Cow, num::NonZeroUsize};
 use tracing::debug;
 
-use crate::{Error, LdapClient, LdapConfig};
+use crate::{LdapClient, LdapConfig};
 
 // Export the pool types in a standard manner.
 // Check the source to see the types this exposes
@@ -103,8 +103,19 @@ impl deadpool::managed::Manager for Manager {
         _metrics: &Metrics,
     ) -> RecycleResult<Self::Error> {
         debug!("recycling connection");
-        client.unbind_ref().await?;
-        Ok(())
+
+        // We don't really need to do anything here.
+        // The one thing that we might potentially want to do is to bind again with the defined
+        // user, but there's no need to do that as the invariant guarantees that it never changes
+        // permanently.
+
+        // This is just a cheap smoke test.
+        if client.ldap.is_closed() {
+            Err(managed::RecycleError::Message(Cow::Borrowed("connection was already closed")))
+        }
+        else {
+            Ok(())
+        }
     }
 }
 
@@ -117,16 +128,4 @@ pub async fn build_connection_pool(
     let pool = Pool::builder(manager).max_size(pool_size.get()).build()?;
 
     Ok(pool)
-}
-
-impl LdapClient {
-    /// End the LDAP connection.
-    ///
-    /// This unbind by reference is needed by deadpool.
-    async fn unbind_ref(&mut self) -> Result<(), Error> {
-        match self.ldap.unbind().await {
-            Ok(_) => Ok(()),
-            Err(error) => Err(Error::Close(String::from("Failed to unbind"), error)),
-        }
-    }
 }
