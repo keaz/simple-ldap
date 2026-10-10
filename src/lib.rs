@@ -181,8 +181,10 @@ const NO_SUCH_RECORD: u32 = 32;
 /// `GroupOfNames` is currently regarded as the default variant and is thus the one being returned
 /// by the impl of `Default`.
 #[derive(Debug, Copy, Clone)]
+#[derive(Default)]
 pub enum GroupObjectClass {
     Group,
+    #[default]
     GroupOfNames,
     GroupOfUniqueNames,
 }
@@ -197,11 +199,6 @@ impl fmt::Display for GroupObjectClass {
     }
 }
 
-impl Default for GroupObjectClass {
-    fn default() -> Self {
-        Self::GroupOfNames
-    }
-}
 
 /// Configuration and authentication for LDAP connection
 #[derive(derive_more::Debug, Clone)]

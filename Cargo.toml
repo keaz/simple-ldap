@@ -1,12 +1,12 @@
 [package]
-authors = ["Kasun Ranasingge <kasunranasinghe303@gmail.com>"]
+authors = ["Kasun Ranasingge <kasunranasinghe303@gmail.com>", "Iisakki Jaakkola <iihaja.utu.8mf4k@addy.io>"]
 description = "A high-level LDAP client for Rust"
 license = "MIT/Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/keaz/simple-ldap"
 keywords = ["ldap", "ldap3", "async", "high-level"]
 name = "simple-ldap"
-version = "11.0.0"
+version = "11.0.1"
 edition = "2024"
 
 
